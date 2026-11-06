@@ -27,7 +27,7 @@ import {
 import { detectDuplicates } from "@/services/processors/duplicateDetector";
 import { extractFromFile } from "@/services/processors/documentProcessor";
 import { validateAll } from "@/services/processors/transactionValidator";
-import { confirmImport, deleteStatement, recordFailedImport } from "@/services/statementService";
+import { deleteStatement, recordFailedImport } from "@/services/statementService";
 import type {
   ExtractedRow,
   ExtractionResult,
@@ -113,7 +113,6 @@ export default function StatementsPage() {
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const loadedStatement = snapshot.statements.find((statement) => statement.status === "completed");
-  const isUploadLocked = snapshot.transactions.length > 0 || loadedStatement !== undefined;
 
   const validRows = useMemo(
     () => rows.filter((row) => row.validationErrors.length === 0),

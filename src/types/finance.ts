@@ -43,6 +43,7 @@ export interface Account {
   last4: string;
   balance: number | null;
   balanceAsOf?: string;
+  bank?: string;
 }
 
 export interface Transaction {

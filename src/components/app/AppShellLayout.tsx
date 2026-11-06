@@ -9,7 +9,7 @@ export function AppShellLayout() {
       <LiveBackground />
       <AppNavbar />
       <main className="py-6 sm:py-8 relative z-10">
-        <PageContainer maxWidth="xl">
+        <PageContainer className="max-w-7xl">
           <Outlet />
         </PageContainer>
       </main>
