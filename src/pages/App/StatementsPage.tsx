@@ -89,7 +89,7 @@ function dateLabel(value: string | null) {
 }
 
 export default function StatementsPage() {
-  const { showToast } = useToast();
+  const { showToast, toast } = useToast();
   const navigate = useNavigate();
   const snapshot = useFinanceStore();
   const [queue, setQueue] = useState<QueuedFile[]>([]);
@@ -102,6 +102,8 @@ export default function StatementsPage() {
   });
   const [activeFile, setActiveFile] = useState<File | null>(null);
   const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
+  const extracted = extraction;
+  const setExtracted = setExtraction;
   const [rows, setRows] = useState<ExtractedRow[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -274,55 +276,73 @@ export default function StatementsPage() {
     setEditing(null);
   };
 
-  const doImport = async () => {
-    if (!activeFile || !extraction) return;
-    if (selectedRows.length === 0) {
-      showToast({
-        kind: "error",
-        title: "No transactions selected",
-        description: "Select at least one valid transaction to unlock financial pages.",
-      });
-      return;
-    }
+  const handleConfirmImport = () => {
+    if (!activeFile || !extracted) return;
+
     try {
-      const record = await confirmImport({
-        statement: {
-          ...form,
-          accountNumberMasked: maskedAccount(form.accountNumberMasked),
-        },
-        rows,
-        fileName: activeFile.name,
-        fileType: extraction.format,
-        fileSize: activeFile.size,
-      });
-      showToast({
-        kind: "success",
-        title: "Import successful",
-        description: `${record.transactionCount} transaction(s) were saved to your account and added to your dashboard.`,
-      });
-      setQueue((current) => current.filter((item) => item.file !== activeFile));
-      setActiveFile(null);
-      setExtraction(null);
-      setRows([]);
-      setWarnings([]);
-      setForm(EMPTY_FORM);
-      setProcessing({ step: "done", progress: 100, message: "Import complete" });
-      setPhase("upload");
-      setConfirmImportOpen(false);
-      window.dispatchEvent(new CustomEvent("finsight:analyze", {
-        detail: { statementId: record.id },
+      // 1. Get valid rows
+      const validRows = rows.filter((r) => r.selected && r.validationErrors.length === 0);
+      if (validRows.length === 0) {
+        toast({ title: "No valid rows selected", variant: "error" });
+        return;
+      }
+
+      // 2. Format into Transaction objects
+      const newTransactions = validRows.map((r) => ({
+        id: `tx-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        date: r.date || new Date().toISOString(),
+        merchant: r.merchant || "Unknown",
+        description: r.description || "",
+        category: r.category || "Other",
+        type: (r.type || "expense") as "income" | "expense",
+        amount: r.amount || 0,
+        accountId: `imported-${form.accountNumberMasked.replace(/\D/g, "") || "x"}`,
       }));
-      navigate("/app/assistant", {
-        state: { analyzeAfterImport: true, statementId: record.id },
-      });
-    } catch (error) {
-      showToast({
-        kind: "error",
-        title: "Import could not be saved",
-        description: error instanceof Error ? error.message : "Please try again.",
-      });
+
+      // 3. Create statement record
+      const record = {
+        id: `stmt-${Date.now()}`,
+        fileName: activeFile.name,
+        fileType: extracted.format,
+        fileSize: activeFile.size,
+        bank: form.bank || "Bank",
+        accountNickname: form.accountNickname || "Account",
+        accountType: form.accountType || "savings",
+        maskedAccount: form.accountNumberMasked || "•••• 0000",
+        periodFrom: form.periodFrom || "",
+        periodTo: form.periodTo || "",
+        currency: form.currency || "INR",
+        uploadedAt: new Date().toISOString(),
+        status: "completed" as const,
+        transactionCount: newTransactions.length,
+        incomeTotal: newTransactions.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0),
+        expenseTotal: newTransactions.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0),
+      };
+
+      // 🚨 4. SAVE TO GLOBAL STORE (This fixes the disappearing data)
+      financeStore.addStatement(record, newTransactions);
+
+      // Check console to verify it saved!
+      console.log("SAVED:", financeStore.getSnapshot().transactions.length, "transactions");
+
+      toast({ title: "File Imported Successfully!", variant: "success" });
+
+      // 5. Reset the upload UI
+      setPhase("upload");
+      setQueue([]);
+      setExtracted(null);
+      setRows([]);
+      setConfirmImportOpen(false);
+
+      // 6. ONLY NAVIGATE AFTER SAVING IS COMPLETE
+      navigate("/app/overview");
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Import failed", description: String(err), variant: "error" });
     }
   };
+
+  const doImport = handleConfirmImport;
 
   const removeStatement = () => {
     if (!deleteTarget) return;
