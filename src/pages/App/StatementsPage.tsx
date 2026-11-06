@@ -413,30 +413,22 @@ export default function StatementsPage() {
         <Alert variant="warning">{getFinanceStoreWarning()}</Alert>
       )}
 
-      {isUploadLocked ? (
+      {loadedStatement && (
         <Card className="border-success/30 bg-success/5">
-          <CardContent className="p-8 text-center sm:p-10">
-            <CheckCircleIcon className="mx-auto mb-4 size-12 text-success" aria-hidden="true" />
-            <h2 className="text-xl font-bold text-ink">Statement successfully loaded</h2>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-ink-muted">
-              Your financial pages use the imported transactions from this statement. To prevent totals from being counted twice, another file can only be imported after resetting your finance data.
+          <CardContent className="p-6 text-center sm:p-8">
+            <CheckCircleIcon className="mx-auto mb-3 size-10 text-success" aria-hidden="true" />
+            <h2 className="text-lg font-bold text-ink">Statement loaded: {loadedStatement.fileName}</h2>
+            <p className="mx-auto mt-1 max-w-xl text-xs text-ink-muted">
+              {loadedStatement.transactionCount} transactions · {formatCurrencyINR(loadedStatement.incomeTotal)} income · {formatCurrencyINR(loadedStatement.expenseTotal)} expenses
             </p>
-            {loadedStatement && (
-              <div className="mx-auto mt-5 max-w-sm rounded-xl border border-success/20 bg-surface px-4 py-3 text-left">
-                <p className="truncate text-sm font-semibold" title={loadedStatement.fileName}>{loadedStatement.fileName}</p>
-                <p className="mt-1 text-xs text-ink-muted">
-                  {loadedStatement.transactionCount} transactions · {formatCurrencyINR(loadedStatement.incomeTotal)} income · {formatCurrencyINR(loadedStatement.expenseTotal)} expenses
-                </p>
-              </div>
-            )}
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <Button onClick={() => navigate("/app/overview")}>View dashboard</Button>
-              <Button variant="outline" onClick={() => setConfirmResetOpen(true)}>Reset &amp; upload new</Button>
+            <div className="mt-4 flex flex-wrap justify-center gap-3">
+              <Button size="sm" onClick={() => navigate("/app/overview")}>View dashboard</Button>
+              <Button size="sm" variant="outline" onClick={() => setConfirmResetOpen(true)}>Reset &amp; upload new</Button>
             </div>
           </CardContent>
         </Card>
-      ) : (
-      <>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
         <Card>
           <CardHeader>
