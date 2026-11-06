@@ -799,14 +799,12 @@ export default function StatementsPage() {
               >
                 Cancel review
               </Button>
-              <Button onClick={() => setConfirmImportOpen(true)} disabled={selectedRows.length === 0}>
+              <Button onClick={handleConfirmImport} disabled={selectedRows.length === 0}>
                 Import {selectedRows.length} selected transaction(s)
               </Button>
             </div>
           </CardContent>
         </Card>
-      )}
-      </>
       )}
 
       <Modal
