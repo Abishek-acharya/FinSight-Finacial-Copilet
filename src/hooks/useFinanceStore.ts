@@ -3,8 +3,8 @@ import { financeStore } from "@/store/financeStore";
 
 export function useFinanceStore() {
   return useSyncExternalStore(
-    financeStore.subscribe,
-    financeStore.getSnapshot,
-    financeStore.getSnapshot,
+    (callback) => financeStore.subscribe(callback),
+    () => financeStore.getSnapshot(),
+    () => financeStore.getSnapshot(),
   );
 }
