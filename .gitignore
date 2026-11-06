@@ -6,5 +6,8 @@ dist/
 !.env.example
 backend/.env
 backend/.venv/
+backend/*.sqlite3
+backend/*.sqlite3-shm
+backend/*.sqlite3-wal
 __pycache__/
 *.py[cod]

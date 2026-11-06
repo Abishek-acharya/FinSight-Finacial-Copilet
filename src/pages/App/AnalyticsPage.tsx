@@ -72,7 +72,7 @@ function getAccounts(
           ? statement.accountType
           : "savings",
         last4: digits.slice(-4),
-        balance: 0,
+        balance: null,
       });
     }
   }
@@ -83,7 +83,7 @@ function getAccounts(
         name: transaction.accountId,
         type: "savings",
         last4: "",
-        balance: 0,
+        balance: null,
       });
     }
   }

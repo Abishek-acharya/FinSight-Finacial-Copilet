@@ -142,10 +142,10 @@ export function buildForecast(
       transaction.date.slice(0, 7) === month.key)
     .reduce((sum, transaction) => sum + transaction.amount, 0));
   const activeIncomeMonths = forecastIncomeValues.filter((income) => income > 0).length;
-  const sufficient = activeExpenseMonths >= 3;
+  const sufficient = activeExpenseMonths >= 2;
   const reason = sufficient
     ? undefined
-    : `At least three complete months with expense activity are required; found ${activeExpenseMonths}.`;
+    : `At least two complete months with expense activity are required; found ${activeExpenseMonths}.`;
   const expenseValues = history.map((month) => month.expenses);
   const incomeValues = forecastIncomeValues;
   const method = filters.method;
@@ -215,8 +215,8 @@ export function buildForecast(
   const selectedAccounts = filters.accountId === "all"
     ? accounts
     : accounts.filter((account) => account.id === filters.accountId);
-  const openingBalance = selectedAccounts.length > 0 && selectedAccounts.every((account) => account.balance !== 0)
-    ? selectedAccounts.reduce((sum, account) => sum + account.balance, 0)
+  const openingBalance = selectedAccounts.length > 0 && selectedAccounts.every((account) => account.balance !== null)
+    ? selectedAccounts.reduce((sum, account) => sum + (account.balance ?? 0), 0)
     : null;
   const closingBalance = openingBalance !== null && forecastSeries.length
     ? openingBalance + forecastSeries.reduce((sum, month) => sum + month.net, 0) * (filters.period === "7d" ? periodScale(filters.period) : 1)

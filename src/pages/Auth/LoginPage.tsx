@@ -39,9 +39,9 @@ export default function LoginPage() {
     <AuthSplitLayout
       eyebrow="Welcome back"
       title="Log in to your account"
-      description="Use the demo credentials to preview the authenticated flow."
+      description="Sign in to restore your account and private financial data."
       asideTitle="A clearer view is just around the corner."
-      asideBody="Sign in to explore the app shell, notifications, and the protected workspace experience for FinSight AI."
+      asideBody="Your account and financial data are stored separately from other users in FinSight's local database."
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
         <EmailInput
@@ -75,7 +75,7 @@ export default function LoginPage() {
       </form>
 
       <div className="mt-6 rounded-xl border border-dashed border-border bg-surface-secondary p-4 text-sm text-ink-muted">
-        Demo credentials: <span className="font-semibold text-ink">demo@finsight.ai</span> / <span className="font-semibold text-ink">demo1234</span>
+        Local development demo: <span className="font-semibold text-ink">demo@finsight.ai</span> / <span className="font-semibold text-ink">demo1234</span>
       </div>
 
       <p className="mt-6 text-center text-sm text-ink-muted">

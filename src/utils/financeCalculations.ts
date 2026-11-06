@@ -1,4 +1,3 @@
-import { demoBudgets } from "@/data/demoBudgets";
 import type { Budget, CategoryBreakdownPoint, DashboardData, DashboardRange, MonthlyTrendPoint, RecurringPayment, Transaction } from "@/types/finance";
 
 export const CATEGORY_COLORS: Record<string, string> = {
@@ -131,7 +130,7 @@ export function getRecentTransactions(transactions: Transaction[], limit = 7): T
     .slice(0, limit);
 }
 
-export function getBudgetOverview(transactions: Transaction[], budgets = demoBudgets): Budget[] {
+export function getBudgetOverview(transactions: Transaction[], budgets: Budget[] = []): Budget[] {
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
 

@@ -39,9 +39,9 @@ export default function ForgotPasswordPage() {
     <AuthSplitLayout
       eyebrow="Reset password"
       title="Need a hand getting back in?"
-      description="Use the demo account email or a registered account to simulate a password reset flow."
+      description="Password recovery is not available in this local build. Contact the administrator to regain access."
       asideTitle="Keep your finances moving forward."
-      asideBody="This is a demo-only reset flow designed to show the experience before the backend auth service is connected."
+      asideBody="Password recovery has not been configured for this local deployment."
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
         <EmailInput

@@ -104,3 +104,32 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@keyframes float-orb-1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(5vw, -3vh, 0) scale(1.08); }
+  66% { transform: translate3d(-3vw, 5vh, 0) scale(0.94); }
+}
+
+@keyframes float-orb-2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(-4vw, 4vh, 0) scale(1.1); }
+  66% { transform: translate3d(3vw, -5vh, 0) scale(0.96); }
+}
+
+@keyframes grid-fade {
+  0%, 100% { opacity: 0.28; }
+  50% { opacity: 0.6; }
+}
+
+.animate-orb-1 {
+  animation: float-orb-1 32s ease-in-out infinite;
+}
+
+.animate-orb-2 {
+  animation: float-orb-2 38s ease-in-out infinite;
+}
+
+.animate-grid {
+  animation: grid-fade 12s ease-in-out infinite;
+}

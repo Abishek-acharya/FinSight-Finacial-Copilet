@@ -42,9 +42,9 @@ export default function RegisterPage() {
     <AuthSplitLayout
       eyebrow="Create account"
       title="Build a smarter money routine"
-      description="Create your demo account to preview the app experience in a protected workspace."
+      description="Create an account to save your financial data in your own protected workspace."
       asideTitle="Build a more thoughtful relationship with money."
-      asideBody="Registration is tied to a local demo session so you can test the end-to-end app flow without a backend."
+      asideBody="Your account and financial data are stored separately from other users in the local FinSight database."
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
         <Input
@@ -80,7 +80,7 @@ export default function RegisterPage() {
 
         <label className="flex items-start gap-2.5 text-sm leading-5 text-ink-muted">
           <Checkbox checked={agreed} onChange={(event) => setAgreed(event.target.checked)} required className="mt-0.5" />
-          <span>I understand this is a local demo account for exploring the FinSight experience.</span>
+          <span>I understand this app stores account and finance data in its local database.</span>
         </label>
 
         <Button type="submit" className="w-full" loading={loading}>

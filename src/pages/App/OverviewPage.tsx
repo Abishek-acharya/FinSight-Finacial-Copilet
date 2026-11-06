@@ -23,12 +23,23 @@ export default function OverviewPage() {
   const { user } = useAuth();
   const [range, setRange] = useState<DashboardRange>("6M");
   const dashboard = useDashboardData(range);
+  const currentMonth = dashboard.monthlyTrend[dashboard.monthlyTrend.length - 1];
+  const previousMonth = dashboard.monthlyTrend[dashboard.monthlyTrend.length - 2];
+  const getMonthChange = (current: number, previous: number) => previous > 0
+    ? `${current >= previous ? "+" : ""}${(((current - previous) / previous) * 100).toFixed(1)}% vs last month`
+    : "No prior data";
+  const incomeChange = currentMonth && previousMonth
+    ? getMonthChange(currentMonth.income, previousMonth.income)
+    : "No prior data";
+  const expensesChange = currentMonth && previousMonth
+    ? getMonthChange(currentMonth.expenses, previousMonth.expenses)
+    : "No prior data";
 
   const metrics = [
-    { label: "Total balance", value: formatCurrencyINR(dashboard.totalBalance), delta: "+4.2%", tone: "positive" as const },
-    { label: "Monthly income", value: formatCurrencyINR(dashboard.income), delta: "+7.5%", tone: "positive" as const },
-    { label: "Monthly expenses", value: formatCurrencyINR(dashboard.expenses), delta: "-3.1%", tone: "negative" as const },
-    { label: "Monthly savings", value: formatCurrencyINR(dashboard.savings), delta: `${dashboard.savingsRate.toFixed(1)}%`, tone: "neutral" as const },
+    { label: "Total balance", value: dashboard.totalBalance === null ? "Unavailable" : formatCurrencyINR(dashboard.totalBalance), delta: "Statement balance", tone: "neutral" as const },
+    { label: "Monthly income", value: formatCurrencyINR(dashboard.income), delta: incomeChange, tone: "neutral" as const },
+    { label: "Monthly expenses", value: formatCurrencyINR(dashboard.expenses), delta: expensesChange, tone: "neutral" as const },
+    { label: "Monthly savings", value: formatCurrencyINR(dashboard.savings), delta: `${dashboard.savingsRate.toFixed(1)}% savings rate`, tone: "neutral" as const },
   ];
 
   return (

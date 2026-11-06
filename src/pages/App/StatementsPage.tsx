@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
+  CheckCircleIcon,
   DocumentTextIcon,
   ExclamationTriangleIcon,
   PencilSquareIcon,
@@ -32,7 +34,7 @@ import type {
   ProcessingState,
   StatementFormData,
 } from "@/types/statement";
-import { getFinanceStoreWarning, type ImportedStatementRecord } from "@/store/financeStore";
+import { financeStore, getFinanceStoreWarning, type ImportedStatementRecord } from "@/store/financeStore";
 import { formatCurrencyINR } from "@/utils/financeCalculations";
 
 interface QueuedFile {
@@ -88,6 +90,7 @@ function dateLabel(value: string | null) {
 
 export default function StatementsPage() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const snapshot = useFinanceStore();
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [form, setForm] = useState<StatementFormData>(EMPTY_FORM);
@@ -106,6 +109,9 @@ export default function StatementsPage() {
   const [editing, setEditing] = useState<ExtractedRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ImportedStatementRecord | null>(null);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const loadedStatement = snapshot.statements.find((statement) => statement.status === "completed");
+  const isUploadLocked = snapshot.transactions.length > 0 || loadedStatement !== undefined;
 
   const validRows = useMemo(
     () => rows.filter((row) => row.validationErrors.length === 0),
@@ -268,10 +274,18 @@ export default function StatementsPage() {
     setEditing(null);
   };
 
-  const doImport = () => {
+  const doImport = async () => {
     if (!activeFile || !extraction) return;
+    if (selectedRows.length === 0) {
+      showToast({
+        kind: "error",
+        title: "No transactions selected",
+        description: "Select at least one valid transaction to unlock financial pages.",
+      });
+      return;
+    }
     try {
-      confirmImport({
+      const record = await confirmImport({
         statement: {
           ...form,
           accountNumberMasked: maskedAccount(form.accountNumberMasked),
@@ -284,7 +298,7 @@ export default function StatementsPage() {
       showToast({
         kind: "success",
         title: "Import successful",
-        description: `${selectedRows.length} transaction(s) were added to your dashboard.`,
+        description: `${record.transactionCount} transaction(s) were saved to your account and added to your dashboard.`,
       });
       setQueue((current) => current.filter((item) => item.file !== activeFile));
       setActiveFile(null);
@@ -295,6 +309,12 @@ export default function StatementsPage() {
       setProcessing({ step: "done", progress: 100, message: "Import complete" });
       setPhase("upload");
       setConfirmImportOpen(false);
+      window.dispatchEvent(new CustomEvent("finsight:analyze", {
+        detail: { statementId: record.id },
+      }));
+      navigate("/app/assistant", {
+        state: { analyzeAfterImport: true, statementId: record.id },
+      });
     } catch (error) {
       showToast({
         kind: "error",
@@ -318,6 +338,24 @@ export default function StatementsPage() {
       showToast({
         kind: "error",
         title: "Could not remove statement",
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    }
+  };
+
+  const resetFinanceData = async () => {
+    try {
+      await financeStore.reset();
+      setConfirmResetOpen(false);
+      showToast({
+        kind: "success",
+        title: "Finance data reset",
+        description: "You can now import a new statement.",
+      });
+    } catch (error) {
+      showToast({
+        kind: "error",
+        title: "Could not reset finance data",
         description: error instanceof Error ? error.message : "Please try again.",
       });
     }
@@ -349,12 +387,36 @@ export default function StatementsPage() {
       />
 
       <Alert variant="info">
-        Files are processed in this browser. Original files are not uploaded or saved; only confirmed transaction details and statement metadata are stored in this browser.
+        Files are processed in this browser and are not uploaded. Only confirmed transaction details and statement metadata are saved to your account.
       </Alert>
       {getFinanceStoreWarning() && (
         <Alert variant="warning">{getFinanceStoreWarning()}</Alert>
       )}
 
+      {isUploadLocked ? (
+        <Card className="border-success/30 bg-success/5">
+          <CardContent className="p-8 text-center sm:p-10">
+            <CheckCircleIcon className="mx-auto mb-4 size-12 text-success" aria-hidden="true" />
+            <h2 className="text-xl font-bold text-ink">Statement successfully loaded</h2>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-ink-muted">
+              Your financial pages use the imported transactions from this statement. To prevent totals from being counted twice, another file can only be imported after resetting your finance data.
+            </p>
+            {loadedStatement && (
+              <div className="mx-auto mt-5 max-w-sm rounded-xl border border-success/20 bg-surface px-4 py-3 text-left">
+                <p className="truncate text-sm font-semibold" title={loadedStatement.fileName}>{loadedStatement.fileName}</p>
+                <p className="mt-1 text-xs text-ink-muted">
+                  {loadedStatement.transactionCount} transactions · {formatCurrencyINR(loadedStatement.incomeTotal)} income · {formatCurrencyINR(loadedStatement.expenseTotal)} expenses
+                </p>
+              </div>
+            )}
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Button onClick={() => navigate("/app/overview")}>View dashboard</Button>
+              <Button variant="outline" onClick={() => setConfirmResetOpen(true)}>Reset &amp; upload new</Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+      <>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
         <Card>
           <CardHeader>
@@ -732,6 +794,8 @@ export default function StatementsPage() {
           </CardContent>
         </Card>
       )}
+      </>
+      )}
 
       <Modal
         open={editing !== null}
@@ -755,7 +819,7 @@ export default function StatementsPage() {
         onClose={() => setConfirmImportOpen(false)}
         onConfirm={doImport}
         title="Confirm statement import"
-        description={`Add ${selectedRows.length} selected transaction(s) to your dashboard? Invalid rows are excluded. Possible duplicates are unchecked by default; any duplicate you explicitly select will be imported. Only extracted data and masked account details are saved in this browser.`}
+        description={`Add ${selectedRows.length} selected transaction(s) to your dashboard? Invalid rows are excluded. Possible duplicates are unchecked by default; any duplicate you explicitly select will be imported. Only extracted data and masked account details are saved to your account.`}
         confirmLabel="Confirm import"
       />
       <ConfirmationDialog
@@ -765,6 +829,15 @@ export default function StatementsPage() {
         title="Delete statement history?"
         description="This removes the statement record only. Transactions already imported from it remain in your dashboard."
         confirmLabel="Delete record"
+        destructive
+      />
+      <ConfirmationDialog
+        open={confirmResetOpen}
+        onClose={() => setConfirmResetOpen(false)}
+        onConfirm={resetFinanceData}
+        title="Reset imported finance data?"
+        description="This clears the imported statement, transactions, accounts, budgets, and goals saved to your account so you can import a different file."
+        confirmLabel="Reset data"
         destructive
       />
     </PageContainer>

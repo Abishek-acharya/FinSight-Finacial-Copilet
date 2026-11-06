@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { DocumentArrowDownIcon, MicrophoneIcon, PaperAirplaneIcon, SparklesIcon, SpeakerWaveIcon, StopIcon } from "@heroicons/react/24/outline";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { financeStore } from "@/store/financeStore";
+import { useFinanceStore } from "@/hooks/useFinanceStore";
+import { getStoredSession } from "@/lib/auth/authService";
 
 type ChartData = { type: "bar" | "line"; title: string; data: Array<Record<string, string | number>>; xKey: string; yKey: string };
 type Download = { format: string; filename: string; mime: string; content_base64: string; summary: string };
@@ -24,15 +26,6 @@ const speechApi = typeof window === "undefined"
   : (window as Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor }).SpeechRecognition
     ?? (window as Window & { webkitSpeechRecognition?: SpeechRecognitionConstructor }).webkitSpeechRecognition;
 
-function makeContext() {
-  const snapshot = financeStore.getSnapshot();
-  return {
-    transactions: snapshot.transactions.map((tx) => ({ date: tx.date.slice(0, 10), merchant: tx.merchant, description: tx.description ?? tx.note ?? "", category: tx.category, type: tx.type, amount: Number(tx.amount) || 0 })),
-    budgets: snapshot.budgetPlans.flatMap((plan) => plan.categoryAllocations.map((allocation) => ({ category: allocation.category, limit: allocation.amount, month: plan.month }))),
-    goals: snapshot.savingsGoals.map((goal) => ({ name: goal.name, targetAmount: goal.targetAmount, currentAmount: goal.currentAmount })),
-  };
-}
-
 function downloadFile(payload: Download) {
   const binary = atob(payload.content_base64);
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -45,15 +38,28 @@ function downloadFile(payload: Download) {
 }
 
 export function AgentChat() {
-  const [messages, setMessages] = useState<Message[]>([{ role: "assistant", content: "Hi, I’m FinSight AI. I can analyze your transactions, budgets, and goals. What would you like to understand?" }]);
+  const [messages, setMessages] = useState<Message[]>([{
+    role: "assistant",
+    content: "Hi! I'm FinSight AI.\n\nI can answer questions about your real financial data after you upload a bank statement.\n\nGo to Statements and upload a CSV, PDF, or Excel file first.",
+  }]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState<number | null>(null);
+  const snapshot = useFinanceStore();
+  const hasData = snapshot.transactions.length > 0;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const locationState = location.state;
+  const analyzeAfterImport = typeof locationState === "object"
+    && locationState !== null
+    && "analyzeAfterImport" in locationState
+    && locationState.analyzeAfterImport === true;
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const autoAnalyzeStartedRef = useRef(false);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, status]);
   useEffect(() => () => { abortRef.current?.abort(); window.speechSynthesis?.cancel(); recognitionRef.current?.stop(); }, []);
 
@@ -71,11 +77,12 @@ export function AgentChat() {
     setRecording(true);
   }
 
-  async function send() {
-    const text = input.trim();
+  async function send(forcedText?: string) {
+    const text = forcedText ?? input.trim();
     if (!text || busy) return;
     setMessages((items) => [...items, { role: "user", content: text }, { role: "assistant", content: "" }]);
-    setInput(""); setBusy(true); setStatus("Thinking…");
+    if (!forcedText) setInput("");
+    setBusy(true); setStatus(forcedText ? "Analyzing your uploaded data…" : "Thinking…");
     const controller = new AbortController(); abortRef.current = controller;
     let answer = "";
     let chart: ChartData | undefined;
@@ -83,8 +90,27 @@ export function AgentChat() {
     let download: Download | undefined;
     const update = () => setMessages((items) => { const next = [...items]; next[next.length - 1] = { role: "assistant", content: answer, chart, citations, download }; return next; });
     try {
-      const response = await fetch("/api/chat/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, financial_context: makeContext() }), signal: controller.signal });
-      if (!response.ok || !response.body) throw new Error(`Backend returned ${response.status}`);
+      const session = getStoredSession();
+      if (!session) throw new Error("Your session expired. Sign in again to use the assistant.");
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({ message: text }),
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) {
+        let detail = `The assistant backend returned ${response.status}.`;
+        try {
+          const payload = await response.json() as { detail?: unknown };
+          if (typeof payload.detail === "string") detail = payload.detail;
+        } catch {
+          detail = `The assistant backend returned ${response.status}.`;
+        }
+        throw new Error(detail);
+      }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
       while (true) {
         const { done, value } = await reader.read(); if (done) break;
@@ -104,9 +130,30 @@ export function AgentChat() {
         }
       }
     } catch (error) {
-      if ((error as Error).name !== "AbortError") { answer = `I couldn’t reach the assistant backend. ${String(error)}\n\nStart the FastAPI server on port 8000 and configure backend/.env.`; update(); }
+      if ((error as Error).name !== "AbortError") {
+        answer = error instanceof Error && error.message.startsWith("An uploaded transaction")
+          ? error.message
+          : `I couldn’t reach the assistant backend. ${String(error)}\n\nStart the FastAPI server on port 8000 and configure backend/.env.`;
+        update();
+      }
     } finally { setBusy(false); setStatus(""); abortRef.current = null; }
   }
+
+  useEffect(() => {
+    const handleAnalyze = () => {
+      if (autoAnalyzeStartedRef.current) return;
+      autoAnalyzeStartedRef.current = true;
+      navigate(location.pathname, { replace: true, state: null });
+      void send("I just uploaded a bank statement. Please calculate my total income, total expenses, and biggest spending category from my uploaded transactions.");
+    };
+
+    window.addEventListener("finsight:analyze", handleAnalyze);
+    if (analyzeAfterImport) {
+      window.dispatchEvent(new CustomEvent("finsight:analyze"));
+    }
+
+    return () => window.removeEventListener("finsight:analyze", handleAnalyze);
+  }, [analyzeAfterImport, location.pathname, navigate]);
 
   function readAloud(text: string, index: number) {
     if (!window.speechSynthesis) return;
@@ -117,6 +164,9 @@ export function AgentChat() {
 
   return <section className="mx-auto flex h-[min(78vh,850px)] min-h-[540px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
     <header className="flex items-center gap-3 border-b border-border px-5 py-4"><span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-primary text-white"><SparklesIcon className="h-5 w-5" /></span><div><h1 className="text-base font-semibold">FinSight AI Co-Pilot</h1><p className="text-xs text-ink-muted">Your financial data is sent to Groq with each question</p></div></header>
+    {!hasData
+      ? <div className="border-b border-warning/30 bg-warning/5 px-4 py-2.5 text-xs text-ink-muted"><strong className="text-ink">No data uploaded yet.</strong>{" "}The AI will answer general knowledge questions until you upload a statement. <a href="/app/statements" className="font-medium text-accent-secondary underline">Upload now →</a></div>
+      : <div className="border-b border-success/30 bg-success/5 px-4 py-2 text-xs text-success">Connected to your financial data</div>}
     <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
       {messages.map((message, index) => <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><article className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm sm:max-w-[84%] ${message.role === "user" ? "rounded-br-sm bg-accent-primary text-white" : "rounded-tl-sm bg-surface-secondary text-ink"}`}>
         <p className="whitespace-pre-wrap">{message.content || "…"}</p>

@@ -1,10 +1,8 @@
-import { demoAccounts } from "@/data/demoAccounts";
-import { demoRecurringPayments } from "@/data/demoRecurringPayments";
-import { demoTransactions } from "@/data/demoTransactions";
 import {
   buildCashFlow,
   buildInsightCards,
   calculateHealthScore,
+  CATEGORY_COLORS,
   formatCurrencyINR,
   getBudgetOverview,
   getCategoryBreakdown,
@@ -16,17 +14,33 @@ import {
   getRecentTransactions,
   getRecurringPaymentsForMonth,
 } from "@/utils/financeCalculations";
-import type { DashboardData, DashboardRange, Transaction } from "@/types/finance";
+import type { BudgetPlan } from "@/types/budget";
+import type { Account, DashboardData, DashboardRange, Transaction } from "@/types/finance";
 
 export function getDashboardData(
-  range: DashboardRange = "6M",
-  transactions: Transaction[] = demoTransactions,
+  range: DashboardRange,
+  transactions: Transaction[],
+  accounts: Account[],
+  budgetPlans: BudgetPlan[],
 ): DashboardData {
   const monthlyTrend = getMonthlyTrend(transactions, range);
   const currentMonthTransactions = getCurrentMonthTransactions(transactions);
   const categoryBreakdown = getCategoryBreakdown(currentMonthTransactions);
   const recentTransactions = getRecentTransactions(transactions, 7);
-  const budgetOverview = getBudgetOverview(currentMonthTransactions);
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const currentPlan = budgetPlans.find((plan) => plan.month === monthKey);
+  const budgetOverview = currentPlan
+    ? getBudgetOverview(
+      currentMonthTransactions,
+      currentPlan.categoryAllocations.map((allocation) => ({
+        category: allocation.category,
+        limit: allocation.amount,
+        spent: 0,
+        color: CATEGORY_COLORS[allocation.category] ?? "#94a3b8",
+      })),
+    )
+    : [];
   const income = getIncomeAmount(currentMonthTransactions);
   const expenses = getExpenseAmount(currentMonthTransactions);
   const savings = income - expenses;
@@ -35,8 +49,12 @@ export function getDashboardData(
   const cashFlow = buildCashFlow(currentMonthTransactions);
 
   return {
-    accounts: demoAccounts,
-    totalBalance: demoAccounts.reduce((sum, account) => sum + account.balance, 0),
+    accounts,
+    totalBalance: accounts.length === 0
+      ? 0
+      : accounts.every((account) => account.balance !== null)
+        ? accounts.reduce((sum, account) => sum + (account.balance ?? 0), 0)
+        : null,
     income,
     expenses,
     savings,
@@ -46,7 +64,7 @@ export function getDashboardData(
     categoryBreakdown,
     recentTransactions,
     budgetOverview,
-    recurringPayments: getRecurringPaymentsForMonth(currentMonthTransactions, demoRecurringPayments),
+    recurringPayments: getRecurringPaymentsForMonth(currentMonthTransactions, []),
     insightCards: buildInsightCards(monthlyTrend, categoryBreakdown),
     dailySpendTrend: getDailySpendTrend(currentMonthTransactions, 7),
     cashFlow,

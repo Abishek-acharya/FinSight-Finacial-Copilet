@@ -1,14 +1,13 @@
-import { demoAccounts } from "@/data/demoAccounts";
-import { demoBudgets } from "@/data/demoBudgets";
-import { demoTransactions } from "@/data/demoTransactions";
 import {
   TRANSACTION_CATEGORIES,
   type Account,
+  type AccountType,
   type Budget,
   type Transaction,
 } from "@/types/finance";
 import type { BudgetPlan, GoalContribution, SavingsGoal } from "@/types/budget";
 import { CATEGORY_COLORS } from "@/utils/financeCalculations";
+import { apiFetch } from "@/lib/api";
 
 export interface UserCategory {
   id: string;
@@ -47,6 +46,8 @@ export interface ImportedStatementRecord {
   transactionCount: number;
   incomeTotal: number;
   expenseTotal: number;
+  closingBalance?: number;
+  balanceAsOf?: string;
   errorMessage?: string;
 }
 
@@ -62,7 +63,7 @@ export interface FinanceSnapshot {
   dismissedAlerts: string[];
 }
 
-const STORAGE_KEY = "finsight_finance_store_v1";
+const STORAGE_KEY = "finsight_finance_store_v4";
 let storeWarning: string | null = null;
 const INCOME_CATEGORIES = new Set([
   "Salary",
@@ -89,89 +90,24 @@ function buildSeedCategories(): UserCategory[] {
   }));
 }
 
-function currentMonthKey(): string {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function seedBudgetPlans(): BudgetPlan[] {
-  const month = currentMonthKey();
-  const now = new Date().toISOString();
-  const categoryAllocations = demoBudgets.map(({ category, limit }) => ({ category, amount: limit }));
-  return [{
-    id: `plan-${month}`,
-    name: `Monthly Budget · ${month}`,
-    month,
-    totalAmount: categoryAllocations.reduce((sum, item) => sum + item.amount, 0),
-    categoryAllocations,
-    currency: "INR",
-    createdAt: now,
-    updatedAt: now,
-  }];
-}
-
-function seedSavingsGoals(): SavingsGoal[] {
-  const now = new Date();
-  const iso = (monthOffset: number) => {
-    const date = new Date(now.getFullYear(), now.getMonth() + monthOffset, now.getDate());
-    return date.toISOString();
-  };
-  const timestamp = now.toISOString();
-  return [
-    {
-      id: "goal-emergency",
-      name: "Emergency Fund",
-      targetAmount: 200000,
-      currentAmount: 65000,
-      targetDate: iso(7),
-      category: "Emergency Fund",
-      priority: "high",
-      status: "active",
-      contributions: [
-        { id: "seed-emergency-1", date: iso(-2), amount: 25000 },
-        { id: "seed-emergency-2", date: iso(-1), amount: 20000 },
-        { id: "seed-emergency-3", date: timestamp, amount: 20000 },
-      ],
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    },
-    {
-      id: "goal-laptop",
-      name: "New Laptop",
-      targetAmount: 85000,
-      currentAmount: 32000,
-      targetDate: iso(5),
-      category: "Gadget",
-      priority: "medium",
-      status: "active",
-      contributions: [
-        { id: "seed-laptop-1", date: iso(-1), amount: 15000 },
-        { id: "seed-laptop-2", date: timestamp, amount: 17000 },
-      ],
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    },
-  ];
-}
-
 function seed(): FinanceSnapshot {
   return {
-    transactions: [...demoTransactions],
-    accounts: [...demoAccounts],
-    budgets: demoBudgets.map((budget) => ({ ...budget, spent: 0 })),
+    transactions: [],
+    accounts: [],
+    budgets: [],
     statements: [],
     categories: buildSeedCategories(),
     userRules: [],
-    budgetPlans: seedBudgetPlans(),
-    savingsGoals: seedSavingsGoals(),
+    budgetPlans: [],
+    savingsGoals: [],
     dismissedAlerts: [],
   };
 }
 
-function read(): FinanceSnapshot | null {
+function read(storageKey = STORAGE_KEY): FinanceSnapshot | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return null;
     const value: unknown = JSON.parse(raw);
     if (
@@ -182,7 +118,7 @@ function read(): FinanceSnapshot | null {
       !Array.isArray((value as FinanceSnapshot).budgets) ||
       !Array.isArray((value as FinanceSnapshot).statements)
     ) {
-      storeWarning = "Saved finance data has an unexpected format. Demo data is shown; the saved value was not changed.";
+      storeWarning = "Saved finance data has an unexpected format. Empty finance data is shown; the saved value was not changed.";
       return null;
     }
     const saved = value as Partial<FinanceSnapshot>;
@@ -193,20 +129,48 @@ function read(): FinanceSnapshot | null {
       ),
       ...existingCategories,
     ];
+    const statements = saved.statements as ImportedStatementRecord[];
+    const accounts = [...saved.accounts as Account[]];
+    for (const statement of statements) {
+      if (statement.status !== "completed" || !statement.maskedAccount || statement.maskedAccount === "—") continue;
+      const digits = statement.maskedAccount.replace(/\D/g, "");
+      const id = `imported-${digits || "x"}`;
+      if (accounts.some((account) => account.id === id)) continue;
+      accounts.push({
+        id,
+        name: statement.accountNickname || statement.bank || "Imported account",
+        type: statement.accountType === "credit" || statement.accountType === "current"
+          ? statement.accountType
+          : "savings",
+        last4: digits.slice(-4),
+        balance: statement.closingBalance ?? null,
+        ...(statement.balanceAsOf ? { balanceAsOf: statement.balanceAsOf } : {}),
+      });
+    }
+    for (const transaction of saved.transactions as Transaction[]) {
+      if (accounts.some((account) => account.id === transaction.accountId)) continue;
+      accounts.push({
+        id: transaction.accountId,
+        name: transaction.accountId,
+        type: "savings",
+        last4: "",
+        balance: null,
+      });
+    }
     storeWarning = null;
     return {
       transactions: saved.transactions as Transaction[],
-      accounts: saved.accounts as Account[],
+      accounts,
       budgets: saved.budgets as Budget[],
-      statements: saved.statements as ImportedStatementRecord[],
+      statements,
       categories,
       userRules: Array.isArray(saved.userRules) ? saved.userRules : [],
-      budgetPlans: Array.isArray(saved.budgetPlans) ? saved.budgetPlans : seedBudgetPlans(),
-      savingsGoals: Array.isArray(saved.savingsGoals) ? saved.savingsGoals : seedSavingsGoals(),
+      budgetPlans: Array.isArray(saved.budgetPlans) ? saved.budgetPlans : [],
+      savingsGoals: Array.isArray(saved.savingsGoals) ? saved.savingsGoals : [],
       dismissedAlerts: Array.isArray(saved.dismissedAlerts) ? saved.dismissedAlerts : [],
     };
   } catch {
-    storeWarning = "Saved finance data could not be read. Demo data is shown; the saved value was not changed.";
+    storeWarning = "Saved finance data could not be read. Empty finance data is shown; the saved value was not changed.";
     return null;
   }
 }
@@ -218,6 +182,10 @@ export function getFinanceStoreWarning() {
 class FinanceStore {
   private snapshot = read() ?? seed();
   private listeners = new Set<() => void>();
+  private activeStorageKey = STORAGE_KEY;
+  private activeAccessToken: string | null = null;
+  private remoteSaveQueue: Promise<void> = Promise.resolve();
+  private syncErrorNotified = false;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -226,8 +194,8 @@ class FinanceStore {
   }
 
   private handleStorage = (event: StorageEvent) => {
-    if (event.key !== STORAGE_KEY) return;
-    this.snapshot = read() ?? seed();
+    if (event.key !== this.activeStorageKey) return;
+    this.snapshot = read(this.activeStorageKey) ?? seed();
     this.notify();
   };
 
@@ -235,9 +203,9 @@ class FinanceStore {
     this.listeners.forEach((listener) => listener());
   }
 
-  private commit(snapshot: FinanceSnapshot) {
+  private writeLocal(snapshot: FinanceSnapshot) {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+      window.localStorage.setItem(this.activeStorageKey, JSON.stringify(snapshot));
     } catch (error) {
       throw new Error(
         error instanceof Error
@@ -245,7 +213,58 @@ class FinanceStore {
           : "Could not save your finance data in this browser.",
       );
     }
+  }
+
+  private saveRemote(snapshot: FinanceSnapshot) {
+    if (!this.activeAccessToken) return;
+    const token = this.activeAccessToken;
+    const body = JSON.stringify({ snapshot });
+    this.remoteSaveQueue = this.remoteSaveQueue
+      .then(async () => {
+        await apiFetch("/api/finance/snapshot", { method: "PUT", body }, token);
+        storeWarning = null;
+        this.syncErrorNotified = false;
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Could not sync finance data with the database.";
+        storeWarning = `Your latest changes are saved in this browser but could not be synced to the server: ${message}`;
+        console.error(storeWarning);
+        this.notify();
+        if (!this.syncErrorNotified && typeof window !== "undefined") {
+          this.syncErrorNotified = true;
+          window.dispatchEvent(new CustomEvent("finsight:finance-sync-error", { detail: { message } }));
+        }
+      });
+  }
+
+  private commit(snapshot: FinanceSnapshot, syncRemote = true) {
+    this.writeLocal(snapshot);
     this.snapshot = snapshot;
+    this.notify();
+    if (syncRemote) this.saveRemote(snapshot);
+  }
+
+  async loadFromDatabase(userId: string, accessToken: string) {
+    this.activeStorageKey = `${STORAGE_KEY}:${userId}`;
+    this.activeAccessToken = accessToken;
+    const result = await apiFetch<{ snapshot: FinanceSnapshot | null }>(
+      "/api/finance/snapshot",
+      {},
+      accessToken,
+    );
+    if (result.snapshot !== null && (
+      !result.snapshot ||
+      !Array.isArray(result.snapshot.transactions) ||
+      !Array.isArray(result.snapshot.accounts) ||
+      !Array.isArray(result.snapshot.statements) ||
+      !Array.isArray(result.snapshot.budgets)
+    )) {
+      throw new Error("The server returned a finance snapshot with an invalid format.");
+    }
+    const loaded = result.snapshot ?? seed();
+    storeWarning = null;
+    this.writeLocal(loaded);
+    this.snapshot = loaded;
     this.notify();
   }
 
@@ -256,12 +275,50 @@ class FinanceStore {
 
   getSnapshot = () => this.snapshot;
 
-  addStatement(record: ImportedStatementRecord, newTransactions: Transaction[]) {
-    this.commit({
+  async addStatement(record: ImportedStatementRecord, newTransactions: Transaction[]) {
+    if (
+      this.snapshot.transactions.length > 0 ||
+      this.snapshot.statements.some((statement) => statement.status === "completed")
+    ) {
+      throw new Error("A statement has already been imported. Reset your finance data before importing another file.");
+    }
+
+    const digits = record.maskedAccount.replace(/\D/g, "");
+    const accountId = `imported-${digits || "x"}`;
+    const accountType: AccountType = record.accountType === "credit" || record.accountType === "current"
+      ? record.accountType
+      : "savings";
+    const existing = this.snapshot.accounts.find((account) => account.id === accountId);
+    const shouldUpdateBalance = record.closingBalance !== undefined
+      && (!existing?.balanceAsOf || !record.balanceAsOf || record.balanceAsOf >= existing.balanceAsOf);
+    const account: Account = {
+      id: accountId,
+      name: record.accountNickname || record.bank || existing?.name || "Imported account",
+      type: accountType,
+      last4: digits.slice(-4) || existing?.last4 || "",
+      balance: shouldUpdateBalance ? record.closingBalance ?? null : existing?.balance ?? null,
+      ...(shouldUpdateBalance && record.balanceAsOf
+        ? { balanceAsOf: record.balanceAsOf }
+        : existing?.balanceAsOf
+          ? { balanceAsOf: existing.balanceAsOf }
+          : {}),
+    };
+    const nextSnapshot = {
       ...this.snapshot,
+      accounts: existing
+        ? this.snapshot.accounts.map((item) => item.id === accountId ? account : item)
+        : [...this.snapshot.accounts, account],
       statements: [record, ...this.snapshot.statements],
       transactions: [...newTransactions, ...this.snapshot.transactions],
-    });
+    };
+    await this.remoteSaveQueue;
+    if (!this.activeAccessToken) throw new Error("Your session expired. Sign in again before importing a statement.");
+    await apiFetch("/api/finance/snapshot", {
+      method: "PUT",
+      body: JSON.stringify({ snapshot: nextSnapshot }),
+    }, this.activeAccessToken);
+    storeWarning = null;
+    this.commit(nextSnapshot, false);
   }
 
   deleteStatement(statementId: string) {
@@ -519,11 +576,18 @@ class FinanceStore {
     this.commit({ ...this.snapshot, dismissedAlerts: [] });
   }
 
-  reset() {
+  async reset() {
+    if (!this.activeAccessToken) throw new Error("Your session expired. Sign in again before resetting finance data.");
+    await this.remoteSaveQueue;
+    await apiFetch("/api/finance/snapshot", { method: "DELETE" }, this.activeAccessToken);
     const snapshot = seed();
+    storeWarning = null;
+    this.syncErrorNotified = false;
     try {
-      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(this.activeStorageKey);
     } catch (error) {
+      this.snapshot = snapshot;
+      this.notify();
       throw new Error(
         error instanceof Error
           ? `Could not reset your finance data: ${error.message}`

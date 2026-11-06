@@ -227,7 +227,7 @@ export default function ForecastPage() {
   const accountsById = new Map(snapshot.accounts.map((account) => [account.id, account]));
   for (const transaction of snapshot.transactions) {
     if (!accountsById.has(transaction.accountId)) accountsById.set(transaction.accountId, {
-      id: transaction.accountId, name: transaction.accountId, type: "savings", last4: "", balance: 0,
+      id: transaction.accountId, name: transaction.accountId, type: "savings", last4: "", balance: null,
     });
   }
   for (const statement of snapshot.statements) {
@@ -239,7 +239,7 @@ export default function ForecastPage() {
       name: statement.accountNickname || statement.bank || "Imported account",
       type: statement.accountType === "credit" || statement.accountType === "current" ? statement.accountType : "savings",
       last4: digits.slice(-4),
-      balance: 0,
+      balance: null,
     });
   }
   const accounts = [...accountsById.values()];

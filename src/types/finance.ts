@@ -41,7 +41,8 @@ export interface Account {
   name: string;
   type: AccountType;
   last4: string;
-  balance: number;
+  balance: number | null;
+  balanceAsOf?: string;
 }
 
 export interface Transaction {
@@ -93,7 +94,7 @@ export interface CategoryBreakdownPoint {
 
 export interface DashboardData {
   accounts: Account[];
-  totalBalance: number;
+  totalBalance: number | null;
   income: number;
   expenses: number;
   savings: number;

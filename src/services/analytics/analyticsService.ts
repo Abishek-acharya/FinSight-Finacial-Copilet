@@ -287,8 +287,8 @@ export function buildAnalytics(
     dailySpending,
     weekendShare: totalExpenses > 0 ? (weekendTotal / totalExpenses) * 100 : 0,
     topMerchants,
-    currentBalance: matchingAccounts.length > 0
-      ? matchingAccounts.reduce((sum, account) => sum + account.balance, 0)
+    currentBalance: matchingAccounts.length > 0 && matchingAccounts.every((account) => account.balance !== null)
+      ? matchingAccounts.reduce((sum, account) => sum + (account.balance ?? 0), 0)
       : null,
   };
 }

@@ -14,7 +14,9 @@ export function UserMenu() {
       onProfile={() => navigate("/app/settings")}
       onSettings={() => navigate("/app/settings")}
       onSignOut={() => {
-        signOut();
+        void signOut().catch((error: unknown) => {
+          console.error("Could not revoke the signed-out session.", error);
+        });
         navigate("/login", { replace: true });
       }}
     />

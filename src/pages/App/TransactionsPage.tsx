@@ -70,7 +70,7 @@ export default function TransactionsPage() {
           : statement.bank,
         type,
         last4: digits.slice(-4),
-        balance: 0,
+        balance: null,
       };
       if (!accountsById.has(id)) accountsById.set(id, account);
     }

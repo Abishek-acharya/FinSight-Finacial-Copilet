@@ -7,6 +7,7 @@ export interface DemoUser {
 
 export interface AuthSession {
   user: DemoUser;
+  accessToken: string;
   expiresAt: number;
 }
 

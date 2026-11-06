@@ -33,7 +33,7 @@ function toTransaction(
   };
 }
 
-export function confirmImport(payload: ConfirmPayload): ImportedStatementRecord {
+export async function confirmImport(payload: ConfirmPayload): Promise<ImportedStatementRecord> {
   const statementId = createId("stmt");
   const accountId = `imported-${payload.statement.accountNumberMasked.replace(/\D/g, "") || "x"}`;
   const confirmedRows = payload.rows.filter(
@@ -42,12 +42,20 @@ export function confirmImport(payload: ConfirmPayload): ImportedStatementRecord 
   const transactions = confirmedRows
     .map((row) => toTransaction(row, statementId, accountId))
     .filter((transaction): transaction is Transaction => transaction !== null);
+  if (transactions.length === 0) {
+    throw new Error("No valid selected transactions could be saved. Review the statement rows and try again.");
+  }
+
   const incomeTotal = transactions
     .filter((transaction) => transaction.type === "income")
     .reduce((sum, transaction) => sum + transaction.amount, 0);
   const expenseTotal = transactions
     .filter((transaction) => transaction.type === "expense")
     .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const balancedRows = confirmedRows
+    .filter((row) => row.balance !== null && Number.isFinite(row.balance) && row.date)
+    .sort((a, b) => a.date!.localeCompare(b.date!));
+  const lastBalancedRow = balancedRows[balancedRows.length - 1];
 
   const record: ImportedStatementRecord = {
     id: statementId,
@@ -66,8 +74,11 @@ export function confirmImport(payload: ConfirmPayload): ImportedStatementRecord 
     transactionCount: transactions.length,
     incomeTotal,
     expenseTotal,
+    ...(lastBalancedRow?.balance !== null && lastBalancedRow?.balance !== undefined
+      ? { closingBalance: lastBalancedRow.balance, balanceAsOf: lastBalancedRow.date ?? undefined }
+      : {}),
   };
-  financeStore.addStatement(record, transactions);
+  await financeStore.addStatement(record, transactions);
   return record;
 }
 

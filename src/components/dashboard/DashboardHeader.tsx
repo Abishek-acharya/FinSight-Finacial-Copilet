@@ -19,7 +19,7 @@ export function DashboardHeader({
         <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight text-ink">
           Good evening, {name}.
         </h1>
-        <p className="mt-2 text-sm text-ink-muted">Your financial activity is healthy and trending in the right direction.</p>
+        <p className="mt-2 text-sm text-ink-muted">A summary of activity from your uploaded financial data.</p>
       </div>
 
       <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface-secondary px-3 py-2">

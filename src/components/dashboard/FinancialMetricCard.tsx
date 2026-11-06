@@ -32,7 +32,11 @@ export function FinancialMetricCard({
           <p className="mt-4 font-display text-3xl font-semibold tracking-tight text-ink">{value}</p>
         </div>
         <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold", toneStyles[tone])}>
-          {tone === "negative" ? <ArrowDownRightIcon className="size-3" /> : <ArrowUpRightIcon className="size-3" />}
+          {tone === "negative"
+            ? <ArrowDownRightIcon className="size-3" />
+            : tone === "positive"
+              ? <ArrowUpRightIcon className="size-3" />
+              : null}
           {delta}
         </span>
       </div>

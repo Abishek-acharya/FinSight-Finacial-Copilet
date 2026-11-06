@@ -14,7 +14,7 @@ export function useForecast(filters: ForecastFilters) {
           name: transaction.accountId,
           type: "savings",
           last4: "",
-          balance: 0,
+          balance: null,
         });
       }
     }
@@ -28,7 +28,7 @@ export function useForecast(filters: ForecastFilters) {
           name: statement.accountNickname || statement.bank || "Imported account",
           type: statement.accountType === "credit" || statement.accountType === "current" ? statement.accountType : "savings",
           last4: digits.slice(-4),
-          balance: 0,
+          balance: null,
         });
       }
     }
