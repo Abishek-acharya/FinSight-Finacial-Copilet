@@ -647,7 +647,7 @@ export default function StatementsPage() {
                   {extraction.format.toUpperCase()} · {rows.length} extracted rows · select the transactions to import.
                 </p>
               </div>
-              <Button variant="outline" onClick={() => setConfirmImportOpen(true)} disabled={selectedRows.length === 0}>
+              <Button variant="outline" onClick={handleConfirmImport} disabled={selectedRows.length === 0}>
                 Import {selectedRows.length} selected
               </Button>
             </div>
