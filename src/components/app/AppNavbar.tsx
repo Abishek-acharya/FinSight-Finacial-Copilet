@@ -1,4 +1,4 @@
-import { BellAlertIcon, ChartBarIcon, CreditCardIcon, CurrencyDollarIcon, HomeIcon, RocketLaunchIcon, WalletIcon } from "@heroicons/react/24/outline";
+import { ArrowTrendingUpIcon, BellAlertIcon, ChartBarIcon, CreditCardIcon, CurrencyDollarIcon, HomeIcon, RocketLaunchIcon, WalletIcon } from "@heroicons/react/24/outline";
 import { NavLink as RouterNavLink, useLocation } from "react-router-dom";
 import { NotificationCenter } from "@/components/app/NotificationCenter";
 import { UserMenu } from "@/components/app/UserMenu";
@@ -9,6 +9,7 @@ const navItems = [
   { label: "Statements", to: "/app/statements", icon: WalletIcon },
   { label: "Transactions", to: "/app/transactions", icon: CreditCardIcon },
   { label: "Analytics", to: "/app/analytics", icon: ChartBarIcon },
+  { label: "Forecast", to: "/app/forecast", icon: ArrowTrendingUpIcon },
   { label: "Budget goals", to: "/app/budget-goals", icon: CurrencyDollarIcon },
   { label: "Assistant", to: "/app/assistant", icon: RocketLaunchIcon },
   { label: "Reports", to: "/app/reports", icon: BellAlertIcon },

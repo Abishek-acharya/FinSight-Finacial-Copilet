@@ -48,8 +48,8 @@ const features = [
   {
     icon: ShieldCheckIcon,
     title: "Built around trust",
-    description: "A preview with illustrative data only—no bank connections, live AI, or certification claims.",
-    label: "Preview safeguards",
+    description: "Manual statement files are processed in your browser; no live bank connections or compliance claims.",
+    label: "Browser-only imports",
     kind: "trust",
   },
 ];

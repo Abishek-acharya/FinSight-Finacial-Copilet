@@ -3,8 +3,8 @@ import { ScrollReveal } from "@/components/animation/ScrollReveal";
 import { Badge } from "@/components/ui/Badge";
 
 const principles = [
-  { icon: EyeSlashIcon, title: "Illustrative data only", description: "Examples on this page are fictional. This preview does not read or store personal financial records." },
-  { icon: LockClosedIcon, title: "No live account connections", description: "There is no bank linking or financial data import in this demonstration experience." },
+  { icon: EyeSlashIcon, title: "Your files stay in this browser", description: "The optional statement importer reads files locally. Original files are not uploaded; confirmed transaction details and statement metadata are stored in this browser." },
+  { icon: LockClosedIcon, title: "No live account connections", description: "There is no bank linking. Statement imports are manual and do not connect to a financial institution." },
   { icon: ShieldCheckIcon, title: "Clear about what’s available", description: "We don't claim security certifications, integrations, or protections that this preview has not implemented." },
 ];
 
@@ -15,7 +15,7 @@ export function SecuritySection() {
         <ScrollReveal>
           <Badge variant="accent">Trust starts with clarity</Badge>
           <h2 className="mt-5 font-display text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">Your financial life deserves thoughtful care.</h2>
-          <p className="mt-5 leading-7 text-white/70">This is an early product preview, not a financial service. We want to be clear about the boundaries: there are no live bank connections, real account data, or verified compliance certifications in this experience.</p>
+          <p className="mt-5 leading-7 text-white/70">This is an early product preview, not a financial service. There are no live bank connections or verified compliance certifications. Statement uploads are optional and processed locally in your browser.</p>
         </ScrollReveal>
         <div className="space-y-3">
           {principles.map(({ icon: Icon, title, description }, index) => (
