@@ -897,7 +897,10 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     voice_mode: bool = False
     history: list[dict[str, str]] = Field(default_factory=list, max_length=8)
-    language: str = Field(default="en-IN", pattern="^(en-IN|hi-IN)$")
+    language: str = Field(
+        default="en-IN",
+        pattern=r"^(en-IN|hi-IN|bn-IN|gu-IN|kn-IN|mr-IN|pa-IN|ta-IN|te-IN|ml-IN|or-IN|ur-IN)$",
+    )
 
 
 def event(name: str, payload: dict) -> str:
@@ -953,12 +956,66 @@ async def run_agent(
         if voice_mode
         else "VOICE_MODE_ACTIVE: No. Infer casual versus analytical style from the user's wording."
     )
-    language_metadata = (
-        "LANGUAGE_MODE_ACTIVE: hi-IN. Reply entirely in natural, polite Hinglish. "
-        "Use Hindi sentence structure and common English financial terms, but do not switch to "
-        "English-only or formal textbook Hindi."
-        if language == "hi-IN"
-        else "LANGUAGE_MODE_ACTIVE: en-IN. Reply entirely in clear, professional English."
+    _LANGUAGE_INSTRUCTIONS: dict[str, str] = {
+        "hi-IN": (
+            "LANGUAGE_MODE_ACTIVE: hi-IN. Reply entirely in natural, polite Hinglish. "
+            "Use Hindi sentence structure and common English financial terms, but do not switch to "
+            "English-only or formal textbook Hindi."
+        ),
+        "bn-IN": (
+            "LANGUAGE_MODE_ACTIVE: bn-IN. Reply entirely in natural Bengali (Bangla). "
+            "Use Bengali sentence structure; use familiar English financial terms like Budget, "
+            "Expense, Income where natural. Do not switch to English mid-answer."
+        ),
+        "gu-IN": (
+            "LANGUAGE_MODE_ACTIVE: gu-IN. Reply entirely in natural Gujarati. "
+            "Use Gujarati sentence structure; keep common English financial terms (Budget, Expense) "
+            "where they are universally understood. Do not switch to English mid-answer."
+        ),
+        "kn-IN": (
+            "LANGUAGE_MODE_ACTIVE: kn-IN. Reply entirely in natural Kannada. "
+            "Use Kannada sentence structure; keep common English financial terms where natural. "
+            "Do not switch to English mid-answer."
+        ),
+        "mr-IN": (
+            "LANGUAGE_MODE_ACTIVE: mr-IN. Reply entirely in natural Marathi. "
+            "Use Marathi sentence structure; keep common English financial terms where natural. "
+            "Do not switch to English mid-answer."
+        ),
+        "pa-IN": (
+            "LANGUAGE_MODE_ACTIVE: pa-IN. Reply entirely in natural Punjabi (Gurmukhi script). "
+            "Use Punjabi sentence structure; keep common English financial terms where natural. "
+            "Do not switch to English mid-answer."
+        ),
+        "ta-IN": (
+            "LANGUAGE_MODE_ACTIVE: ta-IN. Reply entirely in natural Tamil. "
+            "Use Tamil sentence structure; keep common English financial terms where natural. "
+            "Do not switch to English mid-answer."
+        ),
+        "te-IN": (
+            "LANGUAGE_MODE_ACTIVE: te-IN. Reply entirely in natural Telugu. "
+            "Use Telugu sentence structure; keep common English financial terms where natural. "
+            "Do not switch to English mid-answer."
+        ),
+        "ml-IN": (
+            "LANGUAGE_MODE_ACTIVE: ml-IN. Reply entirely in natural Malayalam. "
+            "Use Malayalam sentence structure; keep common English financial terms where natural. "
+            "Do not switch to English mid-answer."
+        ),
+        "or-IN": (
+            "LANGUAGE_MODE_ACTIVE: or-IN. Reply entirely in natural Odia. "
+            "Use Odia sentence structure; keep common English financial terms where natural. "
+            "Do not switch to English mid-answer."
+        ),
+        "ur-IN": (
+            "LANGUAGE_MODE_ACTIVE: ur-IN. Reply entirely in natural Urdu (Nastaliq script preferred). "
+            "Use Urdu sentence structure and courteous Urdu expressions. "
+            "Do not switch to English mid-answer."
+        ),
+    }
+    language_metadata = _LANGUAGE_INSTRUCTIONS.get(
+        language,
+        "LANGUAGE_MODE_ACTIVE: en-IN. Reply entirely in clear, professional English.",
     )
     prior_messages = [
         {"role": item["role"], "content": item["content"][:4000]}
