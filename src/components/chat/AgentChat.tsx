@@ -31,6 +31,135 @@ const speechApi = typeof window === "undefined"
   : (window as Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor }).SpeechRecognition
     ?? (window as Window & { webkitSpeechRecognition?: SpeechRecognitionConstructor }).webkitSpeechRecognition;
 
+// ── Indian language configuration ──────────────────────────────────────────
+type LangCode = "en-IN" | "hi-IN" | "bn-IN" | "gu-IN" | "kn-IN" | "mr-IN" | "pa-IN" | "ta-IN" | "te-IN" | "ml-IN" | "or-IN" | "ur-IN";
+
+interface LangMeta {
+  label: string;
+  nativeName: string;
+  /** Greeting spoken when Voice Mode activates */
+  greeting: string;
+  /** Greeting spoken when switching TO this language mid-session */
+  switchGreeting: string;
+  /** Rupee replacement word for TTS text cleaning */
+  rupeeWord: string;
+  /** Preferred voice name substrings (checked in order) */
+  voiceHints: string[];
+  /** Edge-TTS voice (used by backend /api/voice/speak) */
+  edgeVoice: string;
+}
+
+const LANG_META: Record<LangCode, LangMeta> = {
+  "en-IN": {
+    label: "English",
+    nativeName: "English",
+    greeting: "Hello! I'm your FinSight assistant. I'd be happy to help you with your finances today. What would you like to know?",
+    switchGreeting: "Switched to English. How can I help you with your finances?",
+    rupeeWord: "rupees",
+    voiceHints: ["Google UK English Female", "Neerja", "Heera", "Raveena"],
+    edgeVoice: "en-IN-NeerjaNeural",
+  },
+  "hi-IN": {
+    label: "Hindi",
+    nativeName: "हिन्दी",
+    greeting: "Namaste! Main aapka FinSight assistant hoon. Main aapki kya madad kar sakta hoon?",
+    switchGreeting: "Ab main aapse Hindi mein baat karunga. Bataiye, kya jaanna hai?",
+    rupeeWord: "rupaye",
+    voiceHints: ["Google हिन्दी", "Google Hindi", "Kalpana", "Neerja"],
+    edgeVoice: "hi-IN-SwaraNeural",
+  },
+  "bn-IN": {
+    label: "Bengali",
+    nativeName: "বাংলা",
+    greeting: "Namaskar! Ami apnar FinSight assistant. Apnar finance nie ki janben?",
+    switchGreeting: "Ekhon ami Banglay bolbo. Apnar ki janbar ache?",
+    rupeeWord: "taka",
+    voiceHints: ["Tanishaa", "bn-IN"],
+    edgeVoice: "bn-IN-TanishaaNeural",
+  },
+  "gu-IN": {
+    label: "Gujarati",
+    nativeName: "ગુજરાતી",
+    greeting: "Kem cho! Hoon tamaro FinSight assistant chhun. Tamne kya madad kari shakaay?",
+    switchGreeting: "Hu hu Gujarati ma vaato karis. Tamne shu jaanvu chhe?",
+    rupeeWord: "rupiya",
+    voiceHints: ["Dhwani", "gu-IN"],
+    edgeVoice: "gu-IN-DhwaniNeural",
+  },
+  "kn-IN": {
+    label: "Kannada",
+    nativeName: "ಕನ್ನಡ",
+    greeting: "Namaskara! Naanu nimma FinSight assistant. Nimma finances bagge yenu tiliyabeku?",
+    switchGreeting: "Iga naanu Kannadadalli mathanaduve. Nimma prashne yenu?",
+    rupeeWord: "rupai",
+    voiceHints: ["Sapna", "kn-IN"],
+    edgeVoice: "kn-IN-SapnaNeural",
+  },
+  "mr-IN": {
+    label: "Marathi",
+    nativeName: "मराठी",
+    greeting: "Namaskar! Mi tumcha FinSight assistant aahe. Tumhala finance baabat kaay jaanaychay?",
+    switchGreeting: "Aata mi Marathi madhye bolnar aahe. Tumhala kaay vicharayache aahe?",
+    rupeeWord: "rupaye",
+    voiceHints: ["Aarohi", "mr-IN"],
+    edgeVoice: "mr-IN-AarohiNeural",
+  },
+  "pa-IN": {
+    label: "Punjabi",
+    nativeName: "ਪੰਜਾਬੀ",
+    greeting: "Sat Sri Akal! Main taada FinSight assistant haan. Tussi finance baare ki jaanna chahunde ho?",
+    switchGreeting: "Hune main Punjabi vich gall karda haan. Ki jaanna chahunde ho?",
+    rupeeWord: "rupaye",
+    voiceHints: ["Ojas", "pa-IN"],
+    edgeVoice: "pa-IN-OjasNeural",
+  },
+  "ta-IN": {
+    label: "Tamil",
+    nativeName: "தமிழ்",
+    greeting: "Vanakkam! Naan ungal FinSight assistant. Ungal finance pathi enna theriyanum?",
+    switchGreeting: "Ippo naan Tamilil pesuvein. Ungalukku enna janikkanum?",
+    rupeeWord: "ரூபாய்",
+    voiceHints: ["Pallavi", "ta-IN"],
+    edgeVoice: "ta-IN-PallaviNeural",
+  },
+  "te-IN": {
+    label: "Telugu",
+    nativeName: "తెలుగు",
+    greeting: "Namaskaram! Nenu meeru FinSight assistant. Meeru finance gurinchi emanna telusukovalante?",
+    switchGreeting: "Ippudu nenu Telugu lo matladataanu. Meeru emanna adugutaara?",
+    rupeeWord: "రూపాయలు",
+    voiceHints: ["Shruti", "te-IN"],
+    edgeVoice: "te-IN-ShrutiNeural",
+  },
+  "ml-IN": {
+    label: "Malayalam",
+    nativeName: "മലയാളം",
+    greeting: "Namaskaram! Ente FinSight assistant aanu. Ningalude finance patti enthanu ariyendath?",
+    switchGreeting: "Ippo njaan Malayalatthil samsarikkum. Ningalkku enthu ariyanam?",
+    rupeeWord: "രൂപ",
+    voiceHints: ["Sobhana", "ml-IN"],
+    edgeVoice: "ml-IN-SobhanaNeural",
+  },
+  "or-IN": {
+    label: "Odia",
+    nativeName: "ଓଡ଼ିଆ",
+    greeting: "Namaskar! Mun aapanka FinSight assistant. Aapanka finance bisayare ki jaanibaa?",
+    switchGreeting: "Ebebe mun Odiare kathaa hebi. Aapanka ki prasna?",
+    rupeeWord: "ଟଙ୍କା",
+    voiceHints: ["Subhasini", "or-IN"],
+    edgeVoice: "or-IN-SubhasiniNeural",
+  },
+  "ur-IN": {
+    label: "Urdu",
+    nativeName: "اردو",
+    greeting: "Assalamualaikum! Main aapka FinSight assistant hoon. Aapki finances ke baare mein kya jaanna chahte hain?",
+    switchGreeting: "Ab main Urdu mein baat karunga. Aap kya jaanna chahte hain?",
+    rupeeWord: "روپے",
+    voiceHints: ["Gul", "ur-IN"],
+    edgeVoice: "ur-IN-GulNeural",
+  },
+};
+
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
@@ -68,7 +197,7 @@ export function AgentChat() {
   const [speaking, setSpeaking] = useState<number | null>(null);
   const [voiceMode, setVoiceMode] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [language, setLanguage] = useState<"en-IN" | "hi-IN">("en-IN");
+  const [language, setLanguage] = useState<LangCode>("en-IN");
   const snapshot = useFinanceStore();
   const hasData = snapshot.transactions.length > 0;
   const location = useLocation();
@@ -82,7 +211,7 @@ export function AgentChat() {
   const abortRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceModeRef = useRef(false);
-  const languageRef = useRef<"en-IN" | "hi-IN">("en-IN");
+  const languageRef = useRef<LangCode>("en-IN");
   const autoAnalyzeStartedRef = useRef(false);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, status]);
   useEffect(() => {
@@ -155,8 +284,9 @@ export function AgentChat() {
       return;
     }
     window.speechSynthesis.cancel();
+    const meta = LANG_META[languageRef.current];
     const cleanText = text
-      .replace(/₹\s*([\d,]+(?:\.\d+)?)/g, languageRef.current === "hi-IN" ? "$1 rupaye" : "$1 rupees")
+      .replace(/₹\s*([\d,]+(?:\.\d+)?)/g, `$1 ${meta.rupeeWord}`)
       .replace(/[*#_`]/g, "")
       .replace(/\n+/g, " ")
       .replace(/\s*[-–—]\s*/g, " ")
@@ -165,21 +295,23 @@ export function AgentChat() {
     const sentences = cleanText.match(/[^.!?]+(?:[.!?]+|$)/g)?.map((sentence) => sentence.trim()).filter(Boolean)
       ?? (cleanText ? [cleanText] : []);
     const voices = window.speechSynthesis.getVoices();
-    const preferred = languageRef.current === "hi-IN"
-      ? voices.find((voice) => /Google हिन्दी|Google Hindi|Kalpana|Neerja/i.test(voice.name))
-        ?? voices.find((voice) => voice.lang.toLowerCase() === "hi-in")
-        ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("hi"))
-      : voices.find((voice) => /Google UK English Female|Neerja|Heera/i.test(voice.name))
-        ?? voices.find((voice) => voice.lang.toLowerCase() === "en-in")
-        ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("en-in"))
-      ?? voices.find((voice) => voice.lang === languageRef.current)
-      ?? voices.find((voice) => voice.lang.startsWith(languageRef.current.slice(0, 2)))
-      ?? voices[0];
+    const findVoice = (hints: string[]) => {
+      for (const hint of hints) {
+        const v = voices.find((voice) => new RegExp(hint, "i").test(voice.name));
+        if (v) return v;
+      }
+      return (
+        voices.find((voice) => voice.lang.toLowerCase() === languageRef.current.toLowerCase())
+        ?? voices.find((voice) => voice.lang.toLowerCase().startsWith(languageRef.current.slice(0, 2).toLowerCase()))
+        ?? voices[0]
+      );
+    };
+    const preferred = findVoice(meta.voiceHints);
     sentences.forEach((sentence, index) => {
       const utterance = new SpeechSynthesisUtterance(sentence);
       if (preferred) utterance.voice = preferred;
       utterance.lang = languageRef.current;
-      utterance.rate = languageRef.current === "hi-IN" ? 0.86 : 0.92;
+      utterance.rate = languageRef.current === "en-IN" ? 0.92 : 0.86;
       utterance.pitch = 1.02;
       utterance.onstart = () => { setSpeaking(messages.length); setIsThinking(false); };
       utterance.onend = () => {
@@ -205,10 +337,7 @@ export function AgentChat() {
     }
     voiceModeRef.current = true;
     setVoiceMode(true);
-    const greeting = languageRef.current === "hi-IN"
-      ? "Namaste! Main aapka FinSight assistant hoon. Main aapki kya madad kar sakta hoon?"
-      : "Hello! I'm your FinSight assistant. I'd be happy to help you with your finances today. What would you like to know?";
-    speakVoiceResponse(greeting);
+    speakVoiceResponse(LANG_META[languageRef.current].greeting);
   }
 
   async function send(forcedText?: string) {
