@@ -439,8 +439,18 @@ export function AgentChat() {
   function readAloud(text: string, index: number) {
     if (!window.speechSynthesis) return;
     if (speaking === index) { window.speechSynthesis.cancel(); setSpeaking(null); return; }
-    window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(text); utterance.lang = "en-IN";
-    utterance.onstart = () => setSpeaking(index); utterance.onend = () => setSpeaking(null); window.speechSynthesis.speak(utterance);
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = languageRef.current;
+    const voices = window.speechSynthesis.getVoices();
+    const meta = LANG_META[languageRef.current];
+    for (const hint of meta.voiceHints) {
+      const v = voices.find((voice) => new RegExp(hint, "i").test(voice.name));
+      if (v) { utterance.voice = v; break; }
+    }
+    utterance.onstart = () => setSpeaking(index);
+    utterance.onend = () => setSpeaking(null);
+    window.speechSynthesis.speak(utterance);
   }
 
   function exportChat() {
@@ -480,7 +490,27 @@ export function AgentChat() {
       {!messages.some((message) => message.role === "user") && !busy && <div className="mt-6 flex flex-wrap gap-2"><p className="sr-only">Quick actions</p>{["How much did I spend this month?", "Am I over budget?", "Predict next month's spending", "Show any unusual transactions", "What is compound interest?", "Generate my PDF report"].map((prompt) => <button key={prompt} type="button" onClick={() => void send(prompt)} className="rounded-full border border-border bg-surface px-3 py-1.5 text-left text-xs font-medium text-ink-muted transition-all hover:border-accent-primary/30 hover:bg-accent-primary/10 hover:text-accent-secondary">{prompt}</button>)}</div>}
       {status && <p className="text-xs text-ink-muted" role="status">{status}</p>}<div ref={bottomRef} />
     </div>
-    {voiceMode && <div className="mx-3 mb-3 flex flex-col items-center justify-center rounded-2xl border border-border bg-surface-secondary/30 py-6 shadow-inner"><div className="relative flex size-20 items-center justify-center">{(recording || speaking !== null) && <div className={`absolute inset-0 rounded-full animate-ping ${recording ? "bg-accent-primary/20" : "bg-wealth-green/20"}`} />}<button type="button" onClick={toggleVoiceMode} className={`relative z-10 grid size-14 place-items-center rounded-full shadow-lg transition-all ${recording ? "scale-110 bg-accent-primary text-white" : speaking !== null ? "scale-110 bg-wealth-green text-white" : isThinking ? "bg-ink-muted text-white" : "bg-surface text-ink"}`}>{speaking !== null ? <SpeakerWaveIcon className="size-7" /> : <MicrophoneIcon className="size-7" />}</button></div><p className="mt-3 text-sm font-semibold text-ink">{recording ? "Listening…" : isThinking ? "Thinking…" : speaking !== null ? "Speaking…" : "Tap to speak"}</p><button type="button" onClick={() => { const nextLanguage = language === "en-IN" ? "hi-IN" : "en-IN"; languageRef.current = nextLanguage; setLanguage(nextLanguage); window.speechSynthesis?.cancel(); speakVoiceResponse(nextLanguage === "hi-IN" ? "Ab main aapse Hindi mein baat karunga. Bataiye, kya jaanna hai?" : "I have switched back to English. How can I help you?"); }} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-accent-primary hover:bg-surface"><GlobeAltIcon className="size-3.5" />Switch to {language === "en-IN" ? "Hindi" : "English"}</button></div>}
+    {voiceMode && <div className="mx-3 mb-3 flex flex-col items-center justify-center rounded-2xl border border-border bg-surface-secondary/30 py-6 shadow-inner"><div className="relative flex size-20 items-center justify-center">{(recording || speaking !== null) && <div className={`absolute inset-0 rounded-full animate-ping ${recording ? "bg-accent-primary/20" : "bg-wealth-green/20"}`} />}<button type="button" onClick={toggleVoiceMode} className={`relative z-10 grid size-14 place-items-center rounded-full shadow-lg transition-all ${recording ? "scale-110 bg-accent-primary text-white" : speaking !== null ? "scale-110 bg-wealth-green text-white" : isThinking ? "bg-ink-muted text-white" : "bg-surface text-ink"}`}>{speaking !== null ? <SpeakerWaveIcon className="size-7" /> : <MicrophoneIcon className="size-7" />}</button></div><p className="mt-3 text-sm font-semibold text-ink">{recording ? "Listening…" : isThinking ? "Thinking…" : speaking !== null ? "Speaking…" : "Tap to speak"}</p>
+      {/* Language selector inside voice mode panel */}
+      <div className="mt-3 flex flex-col items-center gap-1.5">
+        <div className="flex items-center gap-1.5 text-xs text-ink-muted"><GlobeAltIcon className="size-3.5" /><span>Language</span></div>
+        <select
+          value={language}
+          onChange={(e) => {
+            const next = e.target.value as LangCode;
+            languageRef.current = next;
+            setLanguage(next);
+            window.speechSynthesis?.cancel();
+            speakVoiceResponse(LANG_META[next].switchGreeting);
+          }}
+          className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink focus:outline-none focus:ring-2 focus:ring-accent-primary"
+        >
+          {(Object.entries(LANG_META) as [LangCode, LangMeta][]).map(([code, meta]) => (
+            <option key={code} value={code}>{meta.nativeName} — {meta.label}</option>
+          ))}
+        </select>
+      </div>
+    </div>}
     <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="flex items-center gap-2 border-t border-border bg-surface p-3 sm:p-4">
       <button type="button" onClick={toggleVoice} aria-label={recording ? "Stop recording" : "Voice input"} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border ${recording ? "animate-pulse bg-error text-white" : "text-ink-muted hover:bg-surface-secondary"}`}><MicrophoneIcon className="h-5 w-5" /></button>
       <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={recording ? "Listening…" : "Ask about spending, budgets, or goals…"} disabled={busy} className="min-w-0 flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent-primary" />
