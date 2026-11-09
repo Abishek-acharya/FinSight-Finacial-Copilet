@@ -513,6 +513,20 @@ export function AgentChat() {
     </div>}
     <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="flex items-center gap-2 border-t border-border bg-surface p-3 sm:p-4">
       <button type="button" onClick={toggleVoice} aria-label={recording ? "Stop recording" : "Voice input"} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border ${recording ? "animate-pulse bg-error text-white" : "text-ink-muted hover:bg-surface-secondary"}`}><MicrophoneIcon className="h-5 w-5" /></button>
+      {/* Compact language selector — always visible in text toolbar */}
+      {!voiceMode && (
+        <select
+          value={language}
+          onChange={(e) => { const next = e.target.value as LangCode; languageRef.current = next; setLanguage(next); }}
+          aria-label="Select language"
+          title="Select language"
+          className="h-10 shrink-0 rounded-xl border border-border bg-surface px-2 text-xs font-medium text-ink-muted focus:outline-none focus:ring-2 focus:ring-accent-primary"
+        >
+          {(Object.entries(LANG_META) as [LangCode, LangMeta][]).map(([code, meta]) => (
+            <option key={code} value={code}>{meta.nativeName}</option>
+          ))}
+        </select>
+      )}
       <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={recording ? "Listening…" : "Ask about spending, budgets, or goals…"} disabled={busy} className="min-w-0 flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent-primary" />
       {busy ? <button type="button" aria-label="Stop response" onClick={() => abortRef.current?.abort()} className="grid h-10 w-10 place-items-center rounded-xl bg-error text-white"><StopIcon className="h-5 w-5" /></button> : <button type="submit" disabled={!input.trim()} aria-label="Send message" className="grid h-10 w-10 place-items-center rounded-xl bg-accent-primary text-white disabled:opacity-40"><PaperAirplaneIcon className="h-5 w-5" /></button>}
     </form>
