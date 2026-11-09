@@ -15,8 +15,8 @@ export function AnimatedNumber({
   className,
 }: AnimatedNumberProps) {
   const reduceMotion = useReducedMotion();
-  const currentValue = useRef(value);
-  const [displayValue, setDisplayValue] = useState(value);
+  const currentValue = useRef(0);
+  const [displayValue, setDisplayValue] = useState(0);
 
   useEffect(() => {
     if (reduceMotion || duration <= 0) {

@@ -8,6 +8,8 @@ import {
 import type { BudgetPlan, GoalContribution, SavingsGoal } from "@/types/budget";
 import { CATEGORY_COLORS } from "@/utils/financeCalculations";
 import { apiFetch } from "@/lib/api";
+import type { DemoUser } from "@/lib/auth/types";
+import { deleteOfflineFinanceData, saveOfflineFinanceData } from "@/services/offlineFinanceCache";
 
 export interface UserCategory {
   id: string;
@@ -42,6 +44,7 @@ export interface ImportedStatementRecord {
   periodTo: string;
   currency: string;
   uploadedAt: string;
+  fileHash?: string;
   status: "completed" | "pending" | "failed";
   transactionCount: number;
   incomeTotal: number;
@@ -80,6 +83,28 @@ function createId(prefix: string): string {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 }
 
+function normalizeTransaction(transaction: Transaction): Transaction {
+  const amount = Number(transaction.amount);
+  const type = String(transaction.type).trim().toLowerCase();
+  return {
+    ...transaction,
+    amount: Number.isFinite(amount) ? Math.abs(amount) : 0,
+    type: type === "income" ? "income" : "expense",
+    category: String(transaction.category || "Other").trim() || "Other",
+  };
+}
+
+function normalizeSnapshot(snapshot: Partial<FinanceSnapshot>): FinanceSnapshot {
+  return {
+    ...seed(),
+    ...snapshot,
+    transactions: Array.isArray(snapshot.transactions)
+      ? snapshot.transactions.map(normalizeTransaction)
+      : [],
+    categories: snapshot.categories?.length ? snapshot.categories : buildSeedCategories(),
+  };
+}
+
 function buildSeedCategories(): UserCategory[] {
   return TRANSACTION_CATEGORIES.map((name) => ({
     id: `sys-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -114,6 +139,10 @@ class FinanceStore {
   private listeners = new Set<() => void>();
   private activeStorageKey = STORAGE_KEY;
   private activeAccessToken: string | null = null;
+  private activeUser: DemoUser | null = null;
+  private offlineReadOnly = false;
+  private offlineSnapshot: FinanceSnapshot | null = null;
+  private remoteSaveQueue: Promise<void> = Promise.resolve();
 
   constructor() {
     try {
@@ -123,11 +152,7 @@ class FinanceStore {
           : null;
       if (raw) {
         const parsed = JSON.parse(raw);
-        this.snapshot = {
-          ...seed(),
-          ...parsed,
-          categories: parsed.categories?.length ? parsed.categories : buildSeedCategories(),
-        };
+        this.snapshot = normalizeSnapshot(parsed);
       } else {
         this.snapshot = seed();
       }
@@ -136,19 +161,27 @@ class FinanceStore {
     }
   }
 
-  private persist() {
-    // 🚨 Saves to browser instantly so navigating doesn't lose data
+  private persist(syncRemote = false) {
+    if (this.offlineReadOnly) {
+      if (this.offlineSnapshot) this.snapshot = this.offlineSnapshot;
+      this.listeners.forEach((fn) => fn());
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("finsight-finance-updated"));
+        window.dispatchEvent(new CustomEvent("finsight:offline-write-blocked"));
+      }
+      throw new Error("Offline mode is read-only. Reconnect before saving changes.");
+    }
+
     if (typeof window !== "undefined") {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.snapshot));
-        if (this.activeStorageKey && this.activeStorageKey !== STORAGE_KEY) {
-          localStorage.setItem(this.activeStorageKey, JSON.stringify(this.snapshot));
-        }
+        localStorage.setItem(this.activeStorageKey, JSON.stringify(this.snapshot));
       } catch (err) {
         console.error("Failed to persist to localStorage:", err);
       }
     }
     this.listeners.forEach((fn) => fn());
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("finsight-finance-updated"));
+    if (syncRemote) this.saveRemote(this.snapshot);
   }
 
   subscribe(fn: () => void): () => void {
@@ -162,9 +195,123 @@ class FinanceStore {
     return this.snapshot;
   }
 
+  private cacheValidatedSnapshot(snapshot: FinanceSnapshot, user = this.activeUser) {
+    if (!user) return;
+    void saveOfflineFinanceData(user, snapshot).catch((error: unknown) => {
+      this.notifyOfflineCacheError(error);
+    });
+  }
+
+  async addManualExpense(input: {
+    amount: number;
+    category: string;
+    date: string;
+    accountId: string;
+    note: string;
+  }): Promise<void> {
+    if (this.offlineReadOnly) throw new Error("Manual expenses cannot be saved while offline. Reconnect and try again.");
+    await this.remoteSaveQueue;
+    const optimisticId = createId("pending-expense");
+    const existingAccount = this.snapshot.accounts.find((account) => account.id === input.accountId);
+    const optimisticAccount: Account = existingAccount
+      ? {
+          ...existingAccount,
+          balance: existingAccount.balance === null ? null : existingAccount.balance - input.amount,
+        }
+      : {
+          id: "manual-cash",
+          name: "Cash",
+          type: "savings",
+          last4: "",
+          balance: -input.amount,
+        };
+    const optimisticTransaction: Transaction = {
+      id: optimisticId,
+      merchant: input.note || input.category,
+      description: input.note,
+      note: input.note,
+      category: input.category,
+      type: "expense",
+      accountId: input.accountId,
+      date: input.date,
+      amount: input.amount,
+      categorizationSource: "manual",
+    };
+    this.snapshot = {
+      ...this.snapshot,
+      transactions: [optimisticTransaction, ...this.snapshot.transactions],
+      accounts: existingAccount
+        ? this.snapshot.accounts.map((account) => account.id === existingAccount.id ? optimisticAccount : account)
+        : [...this.snapshot.accounts, optimisticAccount],
+    };
+    this.persist();
+    this.cacheValidatedSnapshot(this.snapshot);
+    try {
+      const saved = await apiFetch<{ transaction: Transaction; account: Account }>(
+        "/api/finance/transactions",
+        { method: "POST", body: JSON.stringify(input) },
+        this.activeAccessToken ?? undefined,
+      );
+      const accountExists = this.snapshot.accounts.some((account) => account.id === saved.account.id);
+      const transactionsWithoutOptimistic = this.snapshot.transactions.filter(
+        (transaction) => transaction.id !== optimisticId,
+      );
+      this.snapshot = {
+        ...this.snapshot,
+        transactions: transactionsWithoutOptimistic.some((transaction) => transaction.id === saved.transaction.id)
+          ? transactionsWithoutOptimistic
+          : [saved.transaction, ...transactionsWithoutOptimistic],
+        accounts: accountExists
+          ? this.snapshot.accounts.map((account) => account.id === saved.account.id ? saved.account : account)
+          : [...this.snapshot.accounts.filter((account) => account.id !== optimisticAccount.id), saved.account],
+      };
+      this.persist();
+    } catch (error) {
+      this.snapshot = {
+        ...this.snapshot,
+        transactions: this.snapshot.transactions.filter((transaction) => transaction.id !== optimisticId),
+        accounts: existingAccount
+          ? this.snapshot.accounts.map((account) => account.id === existingAccount.id
+            ? {
+                ...account,
+                balance: account.balance === null ? null : account.balance + input.amount,
+              }
+            : account)
+          : this.snapshot.accounts.filter((account) => account.id !== optimisticAccount.id),
+      };
+      this.persist();
+      throw error;
+    }
+  }
+
+  async clearLocalData() {
+    this.snapshot = seed();
+    this.offlineSnapshot = null;
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem("finsight_finance_store_v4");
+        if (this.activeStorageKey) localStorage.removeItem(this.activeStorageKey);
+      } catch (error) {
+        console.error("Could not clear the local finance cache:", error);
+        throw error;
+      }
+      if (this.activeUser) {
+        await deleteOfflineFinanceData(this.activeUser.id);
+      }
+    }
+    this.listeners.forEach((fn) => fn());
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("finsight-finance-updated"));
+  }
+
   addStatement(record: ImportedStatementRecord, newTransactions: Transaction[]) {
-    const income = newTransactions.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
-    const expenses = newTransactions.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+    if (record.fileHash && this.snapshot.statements.some((statement) => statement.fileHash === record.fileHash)) {
+      throw new Error("This statement has already been uploaded.");
+    }
+
+    const normalizedTransactions = newTransactions.map(normalizeTransaction);
+    const income = normalizedTransactions.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    const expenses = normalizedTransactions.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
 
     const accountId = `imported-${record.maskedAccount.replace(/\D/g, "") || "x"}`;
     const existing = this.snapshot.accounts.find((a) => a.id === accountId);
@@ -189,44 +336,60 @@ class FinanceStore {
         ? this.snapshot.accounts.map((a) => (a.id === accountId ? updatedAccount : a))
         : [...this.snapshot.accounts, updatedAccount],
       statements: [record, ...this.snapshot.statements.filter((s) => s.id !== record.id)],
-      transactions: [...newTransactions, ...this.snapshot.transactions],
+      transactions: [...normalizedTransactions, ...this.snapshot.transactions],
     };
 
-    this.persist();
+    this.persist(true);
     console.log("✅ Data Saved Successfully! Total transactions:", this.snapshot.transactions.length);
-
-    if (this.activeAccessToken) {
-      this.saveRemote(this.snapshot);
-    }
   }
 
   // Optional: Sync with backend SQLite database without blocking
   async syncWithDatabase() {
-    try {
-      const res = await fetch("/api/db/transactions");
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.transactions && data.transactions.length > 0) {
-        this.snapshot.transactions = data.transactions;
-        this.persist();
-      }
-    } catch {
-      console.log("Database not connected, using local storage.");
+    if (!this.activeAccessToken) throw new Error("Sign in to sync financial data.");
+    const result = await apiFetch<{ snapshot: FinanceSnapshot | null }>(
+      "/api/finance/snapshot",
+      {},
+      this.activeAccessToken,
+    );
+    if (result.snapshot) {
+      this.snapshot = normalizeSnapshot(result.snapshot);
+      this.persist();
+      this.cacheValidatedSnapshot(this.snapshot);
     }
   }
 
   private saveRemote(snapshot: FinanceSnapshot) {
     if (!this.activeAccessToken) return;
     const token = this.activeAccessToken;
+    const user = this.activeUser;
     const body = JSON.stringify({ snapshot });
-    apiFetch("/api/finance/snapshot", { method: "PUT", body }, token).catch((error) => {
-      console.warn("Background remote sync error (local data preserved):", error);
+    this.remoteSaveQueue = this.remoteSaveQueue.then(async () => {
+      try {
+        await apiFetch("/api/finance/snapshot", { method: "PUT", body }, token);
+        this.cacheValidatedSnapshot(snapshot, user);
+      } catch (error) {
+        console.warn("Background remote sync error (local data preserved):", error);
+      }
     });
   }
 
-  async loadFromDatabase(userId: string, accessToken: string) {
+  async loadFromDatabase(userId: string, accessToken: string, user?: DemoUser) {
     this.activeStorageKey = `${STORAGE_KEY}:${userId}`;
     this.activeAccessToken = accessToken;
+    this.activeUser = user ?? null;
+    this.offlineReadOnly = false;
+    this.offlineSnapshot = null;
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(this.activeStorageKey);
+        this.snapshot = cached
+          ? normalizeSnapshot(JSON.parse(cached) as Partial<FinanceSnapshot>)
+          : seed();
+      } catch (error) {
+        console.error("Could not read the user's local finance snapshot:", error);
+        this.snapshot = seed();
+      }
+    }
     try {
       const result = await apiFetch<{ snapshot: FinanceSnapshot | null }>(
         "/api/finance/snapshot",
@@ -235,20 +398,69 @@ class FinanceStore {
       );
       if (
         result?.snapshot &&
-        Array.isArray(result.snapshot.transactions) &&
-        result.snapshot.transactions.length > 0
+        Array.isArray(result.snapshot.transactions)
       ) {
-        this.snapshot = {
-          ...seed(),
-          ...result.snapshot,
-        };
+        this.snapshot = normalizeSnapshot(result.snapshot);
         this.persist();
       } else if (this.snapshot.transactions.length > 0) {
-        // Sync local data to remote
         this.saveRemote(this.snapshot);
       }
-    } catch (err) {
-      console.log("Database load skipped, local storage retained:", err);
+      if (user) {
+        await saveOfflineFinanceData(user, this.snapshot).catch((error: unknown) => {
+          this.notifyOfflineCacheError(error);
+        });
+      }
+    } catch (error) {
+      console.error("Could not load finance data from the database:", error);
+      throw error;
+    }
+  }
+
+  loadOfflineSnapshot(userId: string, snapshot: FinanceSnapshot, user?: DemoUser) {
+    this.activeStorageKey = `${STORAGE_KEY}:${userId}`;
+    this.activeAccessToken = null;
+    this.activeUser = user?.id === userId
+      ? user
+      : this.activeUser?.id === userId ? this.activeUser : null;
+    this.offlineReadOnly = true;
+    this.snapshot = normalizeSnapshot(snapshot);
+    this.offlineSnapshot = this.snapshot;
+    this.listeners.forEach((fn) => fn());
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("finsight-finance-updated"));
+  }
+
+  enterOfflineMode(userId: string) {
+    this.loadOfflineSnapshot(userId, seed(), this.activeUser ?? undefined);
+  }
+
+  deactivateSession() {
+    this.activeAccessToken = null;
+    this.activeUser = null;
+    this.offlineReadOnly = false;
+    this.offlineSnapshot = null;
+    this.snapshot = seed();
+    this.activeStorageKey = STORAGE_KEY;
+    this.listeners.forEach((fn) => fn());
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("finsight-finance-updated"));
+  }
+
+  isOfflineReadOnly() {
+    return this.offlineReadOnly;
+  }
+
+  activateOnlineSession(accessToken: string, user: DemoUser) {
+    this.activeAccessToken = accessToken;
+    this.activeUser = user;
+    this.offlineReadOnly = false;
+    this.offlineSnapshot = null;
+  }
+
+  notifyOfflineCacheError(error: unknown) {
+    console.error("Offline finance cache operation failed:", error);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("finsight:offline-cache-error", {
+        detail: { message: error instanceof Error ? error.message : "Offline data could not be loaded." },
+      }));
     }
   }
 
@@ -257,7 +469,7 @@ class FinanceStore {
       ...this.snapshot,
       statements: this.snapshot.statements.filter((s) => s.id !== statementId),
     };
-    this.persist();
+    this.persist(true);
   }
 
   markStatementFailed(record: ImportedStatementRecord) {
@@ -273,7 +485,7 @@ class FinanceStore {
       ...this.snapshot,
       transactions: this.snapshot.transactions.map((t) => (t.id === id ? { ...t, ...patch } : t)),
     };
-    this.persist();
+    this.persist(true);
   }
 
   updateManyTransactions(
@@ -287,7 +499,7 @@ class FinanceStore {
         idSet.has(t.id) ? { ...t, ...(typeof patch === "function" ? patch(t) : patch) } : t,
       ),
     };
-    this.persist();
+    this.persist(true);
   }
 
   deleteTransaction(id: string) {
@@ -300,7 +512,7 @@ class FinanceStore {
       ...this.snapshot,
       transactions: this.snapshot.transactions.filter((t) => !idSet.has(t.id)),
     };
-    this.persist();
+    this.persist(true);
   }
 
   addCategory(category: Omit<UserCategory, "id" | "isSystem">): UserCategory {
@@ -371,7 +583,7 @@ class FinanceStore {
       })),
     ];
     this.snapshot = { ...this.snapshot, budgetPlans, budgets };
-    this.persist();
+    this.persist(true);
   }
 
   deleteBudgetPlan(id: string) {
@@ -381,7 +593,7 @@ class FinanceStore {
       budgetPlans: this.snapshot.budgetPlans.filter((item) => item.id !== id),
       budgets: plan ? this.snapshot.budgets.filter((item) => item.month !== plan.month) : this.snapshot.budgets,
     };
-    this.persist();
+    this.persist(true);
   }
 
   addSavingsGoal(goal: Omit<SavingsGoal, "id" | "createdAt" | "updatedAt" | "contributions">): SavingsGoal {
@@ -453,19 +665,10 @@ class FinanceStore {
   }
 
   async reset() {
-    this.snapshot = seed();
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-        if (this.activeStorageKey) localStorage.removeItem(this.activeStorageKey);
-      } catch (e) {
-        console.error("Local storage clear error:", e);
-      }
-    }
-    this.listeners.forEach((fn) => fn());
     if (this.activeAccessToken) {
-      apiFetch("/api/finance/snapshot", { method: "DELETE" }, this.activeAccessToken).catch(() => {});
+      await apiFetch("/api/finance/snapshot", { method: "DELETE" }, this.activeAccessToken);
     }
+    await this.clearLocalData();
   }
 }
 

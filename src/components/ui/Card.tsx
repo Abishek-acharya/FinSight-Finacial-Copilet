@@ -6,16 +6,19 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export const Card = forwardRef<HTMLDivElement, CardProps>(
-  ({ className, interactive = false, ...props }, ref) => (
+  ({ className, interactive = false, children, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        "min-w-0 rounded-2xl border border-border bg-surface shadow-sm",
-        interactive && "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md",
+        "relative min-w-0 overflow-hidden rounded-2xl border border-white/60 bg-white/60 shadow-[0_8px_30px_-12px_rgba(217,119,69,0.06)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/80 hover:border-accent-primary/30 hover:shadow-[0_8px_40px_-4px_rgba(217,119,69,0.12)]",
+        interactive && "cursor-pointer",
         className,
       )}
       {...props}
-    />
+    >
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent opacity-80" />
+      {children}
+    </div>
   ),
 );
 Card.displayName = "Card";

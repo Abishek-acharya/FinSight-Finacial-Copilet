@@ -19,6 +19,21 @@ const TransactionsPage = lazy(() => import("@/pages/App/TransactionsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/App/AnalyticsPage"));
 const BudgetGoalsPage = lazy(() => import("@/pages/App/BudgetGoalsPage"));
 const ForecastPage = lazy(() => import("@/pages/App/ForecastPage"));
+const ActivityHistoryPage = lazy(() => import("@/pages/App/ActivityHistoryPage"));
+
+function PageSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4 px-6 py-10" aria-label="Loading page">
+      <div className="h-8 w-1/3 rounded-lg bg-border/50" />
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="h-32 rounded-2xl bg-border/50" />
+        <div className="h-32 rounded-2xl bg-border/50" />
+        <div className="h-32 rounded-2xl bg-border/50" />
+      </div>
+      <div className="h-64 rounded-2xl bg-border/50" />
+    </div>
+  );
+}
 
 export default function App() {
   return (
@@ -37,7 +52,7 @@ export default function App() {
           <Route
             path="statements"
             element={
-              <Suspense fallback={<div className="px-6 py-10 text-center text-sm text-ink-muted">Loading statements…</div>}>
+              <Suspense fallback={<PageSkeleton />}>
                 <StatementsPage />
               </Suspense>
             }
@@ -45,7 +60,7 @@ export default function App() {
           <Route
             path="transactions"
             element={
-              <Suspense fallback={<div className="px-6 py-10 text-center text-sm text-ink-muted">Loading transactions…</div>}>
+              <Suspense fallback={<PageSkeleton />}>
                 <TransactionsPage />
               </Suspense>
             }
@@ -53,7 +68,7 @@ export default function App() {
           <Route
             path="analytics"
             element={
-              <Suspense fallback={<div className="px-6 py-10 text-center text-sm text-ink-muted">Loading analytics…</div>}>
+              <Suspense fallback={<PageSkeleton />}>
                 <AnalyticsPage />
               </Suspense>
             }
@@ -61,7 +76,7 @@ export default function App() {
           <Route
             path="budget-goals"
             element={
-              <Suspense fallback={<div className="px-6 py-10 text-center text-sm text-ink-muted">Loading budget planner…</div>}>
+              <Suspense fallback={<PageSkeleton />}>
                 <BudgetGoalsPage />
               </Suspense>
             }
@@ -69,7 +84,7 @@ export default function App() {
           <Route
             path="forecast"
             element={
-              <Suspense fallback={<div className="px-6 py-10 text-center text-sm text-ink-muted">Loading forecast…</div>}>
+              <Suspense fallback={<PageSkeleton />}>
                 <ForecastPage />
               </Suspense>
             }
@@ -77,6 +92,14 @@ export default function App() {
           <Route path="assistant" element={<AssistantPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route
+            path="activity"
+            element={
+              <Suspense fallback={<PageSkeleton />}>
+                <ActivityHistoryPage />
+              </Suspense>
+            }
+          />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -66,6 +66,7 @@ export async function confirmImport(payload: ConfirmPayload): Promise<ImportedSt
     accountNickname: payload.statement.accountNickname,
     accountType: payload.statement.accountType,
     maskedAccount: payload.statement.accountNumberMasked,
+    fileHash: payload.fileHash,
     periodFrom: payload.statement.periodFrom,
     periodTo: payload.statement.periodTo,
     currency: payload.statement.currency,

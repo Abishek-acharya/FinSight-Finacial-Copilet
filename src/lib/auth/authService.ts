@@ -30,7 +30,22 @@ async function requestSession(path: string, payload: object): Promise<AuthResult
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const body = await response.json() as ApiSession | { detail?: unknown };
+    const rawBody = await response.text();
+    if (!rawBody.trim()) {
+      return {
+        success: false,
+        error: `Authentication service returned an empty response (HTTP ${response.status}). Make sure the FastAPI backend is running.`,
+      };
+    }
+    let body: ApiSession | { detail?: unknown };
+    try {
+      body = JSON.parse(rawBody) as ApiSession | { detail?: unknown };
+    } catch {
+      return {
+        success: false,
+        error: `Authentication service returned an invalid response (HTTP ${response.status}).`,
+      };
+    }
     if (!response.ok) {
       const error = "detail" in body && typeof body.detail === "string"
         ? body.detail
@@ -86,7 +101,16 @@ export async function getCurrentUser(accessToken: string): Promise<DemoUser> {
   const response = await fetch("/api/auth/me", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  const body = await response.json() as { user?: DemoUser; detail?: unknown };
+  const rawBody = await response.text();
+  if (!rawBody.trim()) {
+    throw new Error(`Authentication service returned an empty response (HTTP ${response.status}).`);
+  }
+  let body: { user?: DemoUser; detail?: unknown };
+  try {
+    body = JSON.parse(rawBody) as { user?: DemoUser; detail?: unknown };
+  } catch {
+    throw new Error(`Authentication service returned an invalid response (HTTP ${response.status}).`);
+  }
   if (!response.ok || !body.user) {
     const error = typeof body.detail === "string" ? body.detail : "Your session could not be verified.";
     throw new Error(error);

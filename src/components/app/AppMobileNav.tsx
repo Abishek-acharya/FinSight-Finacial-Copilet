@@ -9,6 +9,7 @@ const navItems = [
   { label: "Forecast", mobileLabel: "Forecast", to: "/app/forecast" },
   { label: "Goals", mobileLabel: "Goals", to: "/app/budget-goals" },
   { label: "Reports", mobileLabel: "Reports", to: "/app/reports" },
+  { label: "Activity", mobileLabel: "Activity", to: "/app/activity" },
 ];
 
 export function AppMobileNav() {
@@ -16,7 +17,7 @@ export function AppMobileNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/95 backdrop-blur-xl lg:hidden">
-      <div className="mx-auto grid max-w-[var(--content-max)] grid-cols-7 gap-1 px-1 py-2 sm:gap-2 sm:px-4">
+      <div className="mx-auto grid max-w-[var(--content-max)] grid-cols-8 gap-1 px-1 py-2 sm:gap-2 sm:px-4">
         {navItems.map((item) => {
           const isActive = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
 

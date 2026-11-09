@@ -48,7 +48,7 @@ export function StatementUploadZone({
       <span>
         <span className="block text-sm font-semibold">Drop a statement here or browse</span>
         <span className="mt-1 block text-xs text-ink-muted">
-          Digital PDFs, CSV, XLSX, or XLS · up to {MAX_FILE_SIZE / 1024 / 1024} MB per file
+          Digital PDFs, CSV, XLSX, XLS, or images (JPG/PNG) · up to {MAX_FILE_SIZE / 1024 / 1024} MB per file
         </span>
       </span>
       <span className="flex flex-wrap justify-center gap-2">

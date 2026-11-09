@@ -1,6 +1,11 @@
 fastapi
 uvicorn[standard]
+python-multipart
 python-dotenv
-groq
 reportlab
 openpyxl
+pytesseract
+pillow
+numpy
+pandas
+scikit-learn

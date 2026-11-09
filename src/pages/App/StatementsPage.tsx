@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { useFinanceStore } from "@/hooks/useFinanceStore";
+import { useAuth } from "@/hooks/useAuth";
 import {
   ALLOWED_EXTENSIONS,
   getExtension,
@@ -68,6 +69,12 @@ function maskedAccount(value: string) {
   return digits ? `•••• ${digits.slice(-4)}` : "";
 }
 
+async function computeFileHash(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(hashBuffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function fileTypeLabel(file: File) {
   return getExtension(file.name).replace(".", "").toUpperCase();
 }
@@ -92,6 +99,8 @@ export default function StatementsPage() {
   const { showToast, toast } = useToast();
   const navigate = useNavigate();
   const snapshot = useFinanceStore();
+  const { status } = useAuth();
+  const offline = status === "offline";
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [form, setForm] = useState<StatementFormData>(EMPTY_FORM);
   const [phase, setPhase] = useState<"upload" | "processing" | "review">("upload");
@@ -275,18 +284,17 @@ export default function StatementsPage() {
     setEditing(null);
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (!activeFile || !extracted) return;
 
     try {
-      // 1. Get valid rows
+      const fileHash = await computeFileHash(activeFile);
       const validRows = rows.filter((r) => r.selected && r.validationErrors.length === 0);
       if (validRows.length === 0) {
         toast({ title: "No valid rows selected", variant: "error" });
         return;
       }
 
-      // 2. Format into Transaction objects
       const newTransactions = validRows.map((r) => ({
         id: `tx-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         date: r.date || new Date().toISOString(),
@@ -298,7 +306,6 @@ export default function StatementsPage() {
         accountId: `imported-${form.accountNumberMasked.replace(/\D/g, "") || "x"}`,
       }));
 
-      // 3. Create statement record
       const record = {
         id: `stmt-${Date.now()}`,
         fileName: activeFile.name,
@@ -308,6 +315,7 @@ export default function StatementsPage() {
         accountNickname: form.accountNickname || "Account",
         accountType: form.accountType || "savings",
         maskedAccount: form.accountNumberMasked || "•••• 0000",
+        fileHash,
         periodFrom: form.periodFrom || "",
         periodTo: form.periodTo || "",
         currency: form.currency || "INR",
@@ -318,22 +326,14 @@ export default function StatementsPage() {
         expenseTotal: newTransactions.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0),
       };
 
-      // 🚨 4. SAVE TO GLOBAL STORE (This fixes the disappearing data)
       financeStore.addStatement(record, newTransactions);
 
-      // Check console to verify it saved!
-      console.log("SAVED:", financeStore.getSnapshot().transactions.length, "transactions");
-
       toast({ title: "File Imported Successfully!", variant: "success" });
-
-      // 5. Reset the upload UI
       setPhase("upload");
       setQueue([]);
       setExtracted(null);
       setRows([]);
       setConfirmImportOpen(false);
-
-      // 6. ONLY NAVIGATE AFTER SAVING IS COMPLETE
       navigate("/app/overview");
     } catch (err) {
       console.error(err);
@@ -434,7 +434,8 @@ export default function StatementsPage() {
             <CardTitle>1. Choose statement files</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <StatementUploadZone onFiles={addFiles} disabled={phase === "processing"} />
+            <StatementUploadZone onFiles={addFiles} disabled={phase === "processing" || offline} />
+            {offline && <p className="text-sm text-ink-muted">Reconnect to import a statement. Offline mode does not save or queue imports.</p>}
             {queue.length > 0 && (
               <ul className="space-y-2" aria-label="Upload queue">
                 {queue.map(({ file, error, progress }, index) => (
@@ -638,7 +639,7 @@ export default function StatementsPage() {
                   {extraction.format.toUpperCase()} · {rows.length} extracted rows · select the transactions to import.
                 </p>
               </div>
-              <Button variant="outline" onClick={handleConfirmImport} disabled={selectedRows.length === 0}>
+              <Button variant="outline" onClick={handleConfirmImport} disabled={offline || selectedRows.length === 0}>
                 Import {selectedRows.length} selected
               </Button>
             </div>
@@ -798,7 +799,7 @@ export default function StatementsPage() {
               >
                 Cancel review
               </Button>
-              <Button onClick={handleConfirmImport} disabled={selectedRows.length === 0}>
+              <Button onClick={handleConfirmImport} disabled={offline || selectedRows.length === 0}>
                 Import {selectedRows.length} selected transaction(s)
               </Button>
             </div>

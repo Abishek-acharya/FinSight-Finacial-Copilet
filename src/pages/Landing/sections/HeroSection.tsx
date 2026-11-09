@@ -1,4 +1,5 @@
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "framer-motion";
+import type { PointerEvent } from "react";
 import { ArrowDownIcon, ArrowRightIcon, CheckIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import { ButtonLink } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -6,6 +7,22 @@ import { Hero3D } from "@/components/three/Hero3D";
 
 export function HeroSection() {
   const reduceMotion = useReducedMotion();
+  const pointerX = useMotionValue(0);
+  const pointerY = useMotionValue(0);
+  const springX = useSpring(pointerX, { stiffness: 180, damping: 28, mass: 0.5 });
+  const springY = useSpring(pointerY, { stiffness: 180, damping: 28, mass: 0.5 });
+  const backgroundX = useTransform(springX, [-1, 1], [-16, 16]);
+  const backgroundY = useTransform(springY, [-1, 1], [-16, 16]);
+  const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
+    if (reduceMotion || event.pointerType === "touch") return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    pointerX.set(((event.clientX - bounds.left) / bounds.width - 0.5) * 2);
+    pointerY.set(((event.clientY - bounds.top) / bounds.height - 0.5) * 2);
+  };
+  const resetPointer = () => {
+    pointerX.set(0);
+    pointerY.set(0);
+  };
   const reveal = (delay: number) => ({
     initial: reduceMotion ? { opacity: 0 } : { opacity: 0, y: 14 },
     animate: { opacity: 1, y: 0 },
@@ -13,9 +30,9 @@ export function HeroSection() {
   });
 
   return (
-    <section id="home" className="relative isolate overflow-hidden pb-12 pt-28 sm:pb-20 sm:pt-36 lg:min-h-[46rem] lg:pb-24 lg:pt-40">
-      <div aria-hidden="true" className="pointer-events-none absolute -right-40 top-20 -z-10 size-[34rem] rounded-full bg-[#f7e8d9]/70 blur-3xl" />
-      <div aria-hidden="true" className="pointer-events-none absolute -left-48 bottom-0 -z-10 size-[28rem] rounded-full bg-white/80 blur-3xl" />
+    <section id="home" onPointerMove={handlePointerMove} onPointerLeave={resetPointer} className="relative isolate overflow-hidden pb-12 pt-28 sm:pb-20 sm:pt-36 lg:min-h-[46rem] lg:pb-24 lg:pt-40">
+      <motion.div aria-hidden="true" style={reduceMotion ? undefined : { x: backgroundX, y: backgroundY }} className="pointer-events-none absolute -right-40 top-20 -z-10 size-[34rem] rounded-full bg-[#f7e8d9]/70 blur-3xl" />
+      <motion.div aria-hidden="true" style={reduceMotion ? undefined : { x: backgroundY, y: backgroundX }} className="pointer-events-none absolute -left-48 bottom-0 -z-10 size-[28rem] rounded-full bg-white/80 blur-3xl" />
       <div className="mx-auto grid max-w-[var(--content-max)] items-center gap-8 px-[var(--space-page)] lg:grid-cols-[1.05fr_0.95fr] lg:gap-4">
         <div className="relative z-10 max-w-2xl">
           <motion.div {...reveal(0)}>
@@ -29,7 +46,7 @@ export function HeroSection() {
             className="mt-6 max-w-3xl font-display text-[clamp(2.7rem,7vw,5.25rem)] font-semibold leading-[1.02] tracking-[-0.055em]"
           >
             Understand your money.
-            <span className="relative mt-1 block text-accent-secondary">
+            <span className="relative mt-1 block text-accent-primary">
               Move forward with clarity.
               <span aria-hidden="true" className="absolute -bottom-2 left-0 h-1 w-2/3 rounded-full bg-accent-primary/25" />
             </span>

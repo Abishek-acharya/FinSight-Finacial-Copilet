@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ArrowDownTrayIcon,
   AdjustmentsHorizontalIcon,
@@ -33,13 +34,18 @@ import {
 import type { Account, Transaction } from "@/types/finance";
 import type { UserCategory, UserCategoryRule } from "@/store/financeStore";
 import { financeStore, getFinanceStoreWarning } from "@/store/financeStore";
+import { detectUnusualTransactions } from "@/services/transactionAnomalies";
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 export default function TransactionsPage() {
   const snapshot = useFinanceStore();
   const { showToast } = useToast();
-  const [filters, setFilters] = useState<TransactionFiltersState>(DEFAULT_FILTERS);
+  const [searchParams] = useSearchParams();
+  const [filters, setFilters] = useState<TransactionFiltersState>(() => ({
+    ...DEFAULT_FILTERS,
+    search: searchParams.get("search") ?? "",
+  }));
   const [sort, setSort] = useState<SortKey>("date-desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
@@ -50,9 +56,18 @@ export default function TransactionsPage() {
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [rulesManagerOpen, setRulesManagerOpen] = useState(false);
 
+  useEffect(() => {
+    const search = searchParams.get("search") ?? "";
+    setFilters((current) => current.search === search ? current : { ...current, search });
+  }, [searchParams]);
+
   const selectedTransactions = useMemo(
     () => snapshot.transactions.filter((transaction) => selectedIds.has(transaction.id)),
     [snapshot.transactions, selectedIds],
+  );
+  const unusualIds = useMemo(
+    () => detectUnusualTransactions(snapshot.transactions),
+    [snapshot.transactions],
   );
   const accounts = useMemo(() => {
     const accountsById = new Map(snapshot.accounts.map((account) => [account.id, account]));
@@ -373,6 +388,7 @@ export default function TransactionsPage() {
                 onToggleAll={togglePageSelection}
                 onOpen={setDetail}
                 onToggleFlag={toggleFlag}
+                unusualIds={unusualIds}
               />
             </div>
             <div className="md:hidden">
@@ -383,6 +399,7 @@ export default function TransactionsPage() {
                 onToggle={toggleSelection}
                 onOpen={setDetail}
                 onToggleFlag={toggleFlag}
+                unusualIds={unusualIds}
               />
             </div>
             <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />

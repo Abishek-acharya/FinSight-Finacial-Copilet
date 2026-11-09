@@ -101,6 +101,15 @@ export interface DashboardData {
   savings: number;
   savingsRate: number;
   healthScore: number;
+  healthScoreDetails: {
+    score: number;
+    savingsRate: number;
+    savingsScore: number;
+    budgetAdherence: number;
+    spendingStability: number;
+    hasBudgetData: boolean;
+    hasStabilityData: boolean;
+  };
   monthlyTrend: MonthlyTrendPoint[];
   categoryBreakdown: CategoryBreakdownPoint[];
   recentTransactions: Transaction[];

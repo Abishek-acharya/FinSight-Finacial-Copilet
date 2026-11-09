@@ -1,20 +1,20 @@
 import type { Budget, CategoryBreakdownPoint, DashboardData, DashboardRange, MonthlyTrendPoint, RecurringPayment, Transaction } from "@/types/finance";
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  Salary: "#16a34a",
-  Freelance: "#22c55e",
-  "Business Income": "#059669",
+  Salary: "#1c5233",
+  Freelance: "#2d7a4d",
+  "Business Income": "#1c5233",
   Interest: "#0d9488",
   Cashback: "#14b8a6",
   Refund: "#10b981",
   "Other Income": "#34d399",
-  "Food & Dining": "#f59e0b",
+  "Food & Dining": "#b8860b",
   Groceries: "#84cc16",
-  Shopping: "#8b5cf6",
+  Shopping: "#b95f3d",
   Transportation: "#38bdf8",
   Fuel: "#f97316",
-  "Housing & Rent": "#fb923c",
-  Housing: "#fb923c",
+  "Housing & Rent": "#d97745",
+  Housing: "#d97745",
   Utilities: "#06b6d4",
   Healthcare: "#10b981",
   "Health & Wellness": "#10b981",
@@ -58,13 +58,13 @@ export function formatCompactCurrency(value: number): string {
 
 export function getIncomeAmount(transactions: Transaction[]): number {
   return transactions
-    .filter((transaction) => transaction.type === "income")
+    .filter((transaction) => transaction.type.toLowerCase() === "income" && transaction.category.toLowerCase() !== "transfers")
     .reduce((sum, transaction) => sum + transaction.amount, 0);
 }
 
 export function getExpenseAmount(transactions: Transaction[]): number {
   return transactions
-    .filter((transaction) => transaction.type === "expense")
+    .filter((transaction) => transaction.type.toLowerCase() === "expense" && transaction.category.toLowerCase() !== "transfers")
     .reduce((sum, transaction) => sum + transaction.amount, 0);
 }
 
@@ -81,7 +81,8 @@ export function getMonthlyTrend(transactions: Transaction[], range: DashboardRan
     const income = transactions
       .filter(
         (transaction) =>
-          transaction.type === "income" &&
+          transaction.type.toLowerCase() === "income" &&
+          transaction.category.toLowerCase() !== "transfers" &&
           new Date(transaction.date).getFullYear() === year &&
           new Date(transaction.date).getMonth() === monthDate.getMonth(),
       )
@@ -90,7 +91,8 @@ export function getMonthlyTrend(transactions: Transaction[], range: DashboardRan
     const expenses = transactions
       .filter(
         (transaction) =>
-          transaction.type === "expense" &&
+          transaction.type.toLowerCase() === "expense" &&
+          transaction.category.toLowerCase() !== "transfers" &&
           new Date(transaction.date).getFullYear() === year &&
           new Date(transaction.date).getMonth() === monthDate.getMonth(),
       )
@@ -111,7 +113,7 @@ export function getCategoryBreakdown(transactions: Transaction[]): CategoryBreak
   const categoryMap = new Map<string, number>();
 
   transactions
-    .filter((transaction) => transaction.type === "expense")
+    .filter((transaction) => transaction.type.toLowerCase() === "expense" && transaction.category.toLowerCase() !== "transfers")
     .forEach((transaction) => {
       categoryMap.set(transaction.category, (categoryMap.get(transaction.category) ?? 0) + transaction.amount);
     });
@@ -139,7 +141,8 @@ export function getBudgetOverview(transactions: Transaction[], budgets: Budget[]
       .filter((transaction) => {
         const date = new Date(transaction.date);
         return (
-          transaction.type === "expense" &&
+          transaction.type.toLowerCase() === "expense" &&
+          transaction.category.toLowerCase() !== "transfers" &&
           matchesBudgetCategory(transaction.category, budget.category) &&
           date.getMonth() === currentMonth &&
           date.getFullYear() === currentYear
@@ -154,7 +157,7 @@ export function getBudgetOverview(transactions: Transaction[], budgets: Budget[]
   });
 }
 
-function matchesBudgetCategory(transactionCategory: string, budgetCategory: string): boolean {
+export function matchesBudgetCategory(transactionCategory: string, budgetCategory: string): boolean {
   const aliases: Record<string, string[]> = {
     "Food & Dining": ["Food & Dining", "Groceries"],
     Transport: ["Transport", "Transportation", "Fuel"],
@@ -175,7 +178,7 @@ export function getDailySpendTrend(transactions: Transaction[], days = 7): Array
   });
 
   transactions
-    .filter((transaction) => transaction.type === "expense")
+    .filter((transaction) => transaction.type.toLowerCase() === "expense" && transaction.category.toLowerCase() !== "transfers")
     .forEach((transaction) => {
       const transactionDate = new Date(transaction.date);
       const diffDays = Math.floor((Date.now() - transactionDate.getTime()) / 86400000);
@@ -191,29 +194,54 @@ export function getDailySpendTrend(transactions: Transaction[], days = 7): Array
 }
 
 export function calculateHealthScore(income: number, expenses: number, budgets: Budget[]): number {
-  const savings = income - expenses;
-  const savingsRate = income > 0 ? (savings / income) * 100 : 0;
-  const budgetUtilization = budgets.length
-    ? budgets.reduce((sum, budget) => sum + Math.min((budget.spent / budget.limit) * 100, 100), 0) / budgets.length
-    : 0;
+  return calculateHealthScoreBreakdown(income, expenses, budgets).score;
+}
 
-  let score = 0;
-  if (savingsRate >= 25) score += 40;
-  else if (savingsRate >= 15) score += 28;
-  else if (savingsRate >= 5) score += 18;
-  else score += 8;
+export interface FinancialHealthScoreBreakdown {
+  score: number;
+  savingsRate: number;
+  savingsScore: number;
+  budgetAdherence: number;
+  spendingStability: number;
+  hasBudgetData: boolean;
+  hasStabilityData: boolean;
+}
 
-  if (budgetUtilization <= 75) score += 30;
-  else if (budgetUtilization <= 90) score += 22;
-  else if (budgetUtilization <= 110) score += 12;
-  else score += 4;
+export function calculateHealthScoreBreakdown(
+  income: number,
+  expenses: number,
+  budgets: Budget[],
+  monthlyExpenses: number[] = [],
+  plannedMonthlySavings = 0,
+): FinancialHealthScoreBreakdown {
+  const savingsRate = income > 0 ? ((income - expenses + plannedMonthlySavings) / income) * 100 : 0;
+  const savingsScore = Math.min(100, Math.max(0, (savingsRate / 20) * 100));
 
-  if (income >= 100000) score += 20;
-  else if (income >= 60000) score += 14;
-  else if (income >= 30000) score += 9;
-  else score += 5;
+  const budgetAdherence = budgets.length
+    ? budgets.reduce((sum, budget) => {
+      if (budget.limit <= 0) return sum + (budget.spent <= 0 ? 100 : 0);
+      const overagePercent = Math.max(0, ((budget.spent - budget.limit) / budget.limit) * 100);
+      return sum + Math.max(0, 100 - overagePercent);
+    }, 0) / budgets.length
+    : 50;
 
-  return Math.min(100, Math.max(0, Math.round(score)));
+  const validMonthlyExpenses = monthlyExpenses.filter((amount) => Number.isFinite(amount) && amount >= 0);
+  const spendingStability = validMonthlyExpenses.length > 1
+    ? Math.max(0, 100 - validMonthlyExpenses.slice(1).reduce((sum, amount, index) => {
+      const previous = validMonthlyExpenses[index];
+      return sum + (previous > 0 ? Math.abs((amount - previous) / previous) * 100 : amount > 0 ? 100 : 0);
+    }, 0) / (validMonthlyExpenses.length - 1))
+    : 50;
+
+  return {
+    score: Math.round(savingsScore * 0.4 + budgetAdherence * 0.3 + spendingStability * 0.3),
+    savingsRate: Math.round(savingsRate * 10) / 10,
+    savingsScore: Math.round(savingsScore),
+    budgetAdherence: Math.round(budgetAdherence),
+    spendingStability: Math.round(spendingStability),
+    hasBudgetData: budgets.length > 0,
+    hasStabilityData: validMonthlyExpenses.length > 1,
+  };
 }
 
 export function buildInsightCards(monthlyTrend: MonthlyTrendPoint[], categoryBreakdown: CategoryBreakdownPoint[]): Array<{ title: string; description: string; value: string }> {

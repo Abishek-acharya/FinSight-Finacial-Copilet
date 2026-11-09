@@ -62,6 +62,7 @@ export interface ConfirmPayload {
   fileName: string;
   fileType: string;
   fileSize: number;
+  fileHash?: string;
 }
 
 export type ExtractedTransaction = Omit<Transaction, "id">;

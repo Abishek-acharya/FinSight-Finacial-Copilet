@@ -12,16 +12,35 @@ export async function apiFetch<T>(
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
   const response = await fetch(path, { ...init, headers });
+  if (response.status === 401) {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("finsight_demo_session");
+      window.dispatchEvent(new CustomEvent("finsight-session-expired", { detail: { path } }));
+    }
+  }
   if (!response.ok) {
     let message = `Request failed with status ${response.status}.`;
     try {
-      const payload = await response.json() as { detail?: unknown };
-      if (typeof payload.detail === "string") message = payload.detail;
+      const rawBody = await response.text();
+      if (rawBody.trim()) {
+        const payload = JSON.parse(rawBody) as { detail?: unknown };
+        if (typeof payload.detail === "string") message = payload.detail;
+      } else {
+        message = `Request failed with status ${response.status}. The server returned an empty response.`;
+      }
     } catch {
-      message = `Request failed with status ${response.status}.`;
+      message = `Request failed with status ${response.status}. The server returned an invalid response.`;
     }
     throw new Error(message);
   }
   if (response.status === 204) return undefined as T;
-  return await response.json() as T;
+  const rawBody = await response.text();
+  if (!rawBody.trim()) {
+    throw new Error(`Request succeeded with status ${response.status}, but the server returned an empty response.`);
+  }
+  try {
+    return JSON.parse(rawBody) as T;
+  } catch {
+    throw new Error(`Request succeeded with status ${response.status}, but the server returned an invalid response.`);
+  }
 }

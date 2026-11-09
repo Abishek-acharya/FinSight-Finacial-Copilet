@@ -74,6 +74,13 @@ export default function LoginPage() {
         </Button>
       </form>
 
+      <Link
+        to="/demo"
+        className="mt-4 flex min-h-11 w-full items-center justify-center rounded-xl border border-accent-primary/40 bg-accent-primary/10 px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-accent-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+      >
+        Explore guided demo · sample data
+      </Link>
+
       <div className="mt-6 rounded-xl border border-dashed border-border bg-surface-secondary p-4 text-sm text-ink-muted">
         Local development demo: <span className="font-semibold text-ink">demo@finsight.ai</span> / <span className="font-semibold text-ink">demo1234</span>
       </div>

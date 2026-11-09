@@ -1,7 +1,7 @@
 import {
   buildCashFlow,
   buildInsightCards,
-  calculateHealthScore,
+  calculateHealthScoreBreakdown,
   CATEGORY_COLORS,
   formatCurrencyINR,
   getBudgetOverview,
@@ -45,7 +45,25 @@ export function getDashboardData(
   const expenses = getExpenseAmount(currentMonthTransactions);
   const savings = income - expenses;
   const savingsRate = income > 0 ? (savings / income) * 100 : 0;
-  const healthScore = calculateHealthScore(income, expenses, budgetOverview);
+  const historicalMonthlyExpenses = Array.from({ length: 3 }, (_, index) => {
+    const monthDate = new Date(now.getFullYear(), now.getMonth() - 3 + index, 1);
+    const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
+    const monthTransactions = transactions.filter((transaction) =>
+      transaction.date.slice(0, 7) === key &&
+      transaction.type === "expense" &&
+      transaction.category.toLowerCase() !== "transfers",
+    );
+    return monthTransactions.length
+      ? monthTransactions.reduce((sum, transaction) => sum + transaction.amount, 0)
+      : null;
+  }).filter((amount): amount is number => amount !== null);
+  const healthScoreDetails = calculateHealthScoreBreakdown(
+    income,
+    expenses,
+    budgetOverview,
+    historicalMonthlyExpenses,
+  );
+  const healthScore = healthScoreDetails.score;
   const cashFlow = buildCashFlow(currentMonthTransactions);
 
   return {
@@ -60,6 +78,7 @@ export function getDashboardData(
     savings,
     savingsRate,
     healthScore,
+    healthScoreDetails,
     monthlyTrend,
     categoryBreakdown,
     recentTransactions,

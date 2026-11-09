@@ -3,7 +3,7 @@ import { formatCurrencyINR } from "@/utils/financeCalculations";
 
 export function RecentTransactions({ transactions }: { transactions: Transaction[] }) {
   return (
-    <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm">
+    <div className="rounded-[28px] border border-border/70 bg-surface/85 p-6 shadow-[0_2px_10px_-4px_rgba(37,37,34,0.07)] backdrop-blur-md">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent-secondary">Activity</p>
@@ -20,7 +20,7 @@ export function RecentTransactions({ transactions }: { transactions: Transaction
                 <p className="font-medium text-ink">{transaction.merchant}</p>
                 <p className="mt-1 text-xs text-ink-muted">{transaction.category} • {dateLabel}</p>
               </div>
-              <p className={transaction.type === "income" ? "font-semibold text-[#2d7a5a]" : "font-semibold text-ink"}>
+              <p className={`financial-number text-sm font-semibold ${transaction.type === "income" ? "text-[#2d7a5a]" : "text-ink"}`}>
                 {transaction.type === "income" ? "+" : "-"}{formatCurrencyINR(transaction.amount)}
               </p>
             </div>

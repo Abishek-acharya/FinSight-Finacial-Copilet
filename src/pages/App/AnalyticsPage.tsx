@@ -105,7 +105,7 @@ function MetricCard({
     <Card>
       <CardContent className="p-4 sm:p-5">
         <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</p>
-        <p className={`mt-2 text-xl font-bold tabular-nums sm:text-2xl ${tone === "positive" ? "text-success" : tone === "negative" ? "text-error" : "text-ink"}`}>
+        <p className={`financial-number mt-2 text-xl font-bold sm:text-2xl ${tone === "positive" ? "text-success" : tone === "negative" ? "text-error" : "text-ink"}`}>
           {value}
         </p>
         <p className="mt-1 text-xs text-ink-muted">{description}</p>
@@ -129,7 +129,7 @@ function AnalyticsTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-border bg-surface p-3 text-xs shadow-lg">
+    <div className="rounded-lg border border-border/70 bg-surface/90 p-3 text-xs shadow-lg backdrop-blur-md">
       {label && <p className="mb-1 font-semibold text-ink">{label}</p>}
       {payload.map((item, index) => (
         <p key={`${item.name}-${index}`} className="text-ink-muted">
@@ -141,7 +141,15 @@ function AnalyticsTooltip({ active, payload, label }: {
   );
 }
 
-function SpendingPanel({ data }: { data: ReturnType<typeof buildAnalytics> }) {
+function SpendingPanel({
+  data,
+  selectedCategory,
+  onSelectCategory,
+}: {
+  data: ReturnType<typeof buildAnalytics>;
+  selectedCategory: string | null;
+  onSelectCategory: (category: string | null) => void;
+}) {
   const trend = data.months.map((month) => ({
     month: month.shortLabel,
     Income: month.income,
@@ -158,7 +166,22 @@ function SpendingPanel({ data }: { data: ReturnType<typeof buildAnalytics> }) {
               <div className="h-64 min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={data.categories} dataKey="amount" nameKey="category" innerRadius="55%" outerRadius="82%" paddingAngle={2}>
+                    <Pie
+                      data={data.categories}
+                      dataKey="amount"
+                      nameKey="category"
+                      innerRadius="55%"
+                      outerRadius="82%"
+                      paddingAngle={2}
+                      cursor="pointer"
+                      onClick={(entry) => {
+                        const payload = entry?.payload;
+                        const category = payload && typeof payload === "object" && "category" in payload
+                          ? payload.category
+                          : null;
+                        onSelectCategory(typeof category === "string" ? category : null);
+                      }}
+                    >
                       {data.categories.map((item) => <Cell key={item.category} fill={item.color} />)}
                     </Pie>
                     <Tooltip content={<AnalyticsTooltip />} />
@@ -180,6 +203,34 @@ function SpendingPanel({ data }: { data: ReturnType<typeof buildAnalytics> }) {
           )}
         </CardContent>
       </Card>
+      {selectedCategory && (
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>{selectedCategory} transactions</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => onSelectCategory(null)}>Clear selection</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {data.months
+                .flatMap((month) => month.transactions)
+                .filter((transaction) => transaction.category === selectedCategory && transaction.type === "expense")
+                .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+                .slice(0, 10)
+                .map((transaction) => (
+                  <div key={transaction.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-ink">{transaction.merchant}</p>
+                      <p className="text-xs text-ink-muted">{new Date(transaction.date).toLocaleDateString("en-IN")}</p>
+                    </div>
+                    <span className="shrink-0 font-semibold tabular-nums text-ink">{formatINR(transaction.amount)}</span>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader><CardTitle>Income, expenses and net savings</CardTitle></CardHeader>
         <CardContent>
@@ -187,13 +238,13 @@ function SpendingPanel({ data }: { data: ReturnType<typeof buildAnalytics> }) {
             <div className="h-72 min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={trend} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={formatCompactCurrency} tick={{ fontSize: 10 }} width={52} />
+                  <CartesianGrid stroke="#eae5dc" strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#85847f" }} />
+                  <YAxis tickFormatter={formatCompactCurrency} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#85847f" }} width={52} />
                   <Tooltip content={<AnalyticsTooltip />} />
-                  <Bar dataKey="Income" fill="#2D7A4D" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Expenses" fill="#D97745" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Savings" fill="#6d79bd" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Income" fill="#1C5233" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Expenses" fill="#B95F3D" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Savings" fill="#B8860B" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -214,11 +265,11 @@ function IncomePanel({ data }: { data: ReturnType<typeof buildAnalytics> }) {
             <div className="h-72 min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.months.map((month) => ({ month: month.shortLabel, income: month.income }))}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={formatCompactCurrency} tick={{ fontSize: 10 }} width={52} />
+                  <CartesianGrid stroke="#eae5dc" strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#85847f" }} />
+                  <YAxis tickFormatter={formatCompactCurrency} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#85847f" }} width={52} />
                   <Tooltip content={<AnalyticsTooltip />} />
-                  <Bar dataKey="income" name="Income" fill="#2D7A4D" radius={[5, 5, 0, 0]} />
+                  <Bar dataKey="income" name="Income" fill="#1C5233" radius={[5, 5, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -344,12 +395,12 @@ function TrendsPanel({ data }: { data: ReturnType<typeof buildAnalytics> }) {
             <div className="h-80 min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={formatCompactCurrency} tick={{ fontSize: 10 }} width={52} />
+                  <CartesianGrid stroke="#eae5dc" strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#85847f" }} />
+                  <YAxis tickFormatter={formatCompactCurrency} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#85847f" }} width={52} />
                   <Tooltip content={<AnalyticsTooltip />} />
                   {categories.map((category) => (
-                    <Line key={category.category} dataKey={category.category} type="monotone" stroke={category.color} strokeWidth={2} dot={{ r: 3 }} />
+                    <Line key={category.category} dataKey={category.category} type="monotone" stroke={category.color} strokeWidth={3} strokeLinecap="round" dot={{ r: 3 }} activeDot={{ r: 6, stroke: "#fff", strokeWidth: 2 }} />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
@@ -420,9 +471,9 @@ function CashFlowPanel({ data }: { data: ReturnType<typeof buildAnalytics> }) {
             <div className="h-80 min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={formatCompactCurrency} tick={{ fontSize: 10 }} width={52} />
+                  <CartesianGrid stroke="#eae5dc" strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#85847f" }} />
+                  <YAxis tickFormatter={formatCompactCurrency} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#85847f" }} width={52} />
                   <Tooltip content={<AnalyticsTooltip />} />
                   <Bar dataKey="Income" fill="#2D7A4D" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Expenses" fill="#D97745" radius={[4, 4, 0, 0]} />
@@ -449,9 +500,9 @@ function PatternsPanel({ data }: { data: ReturnType<typeof buildAnalytics> }) {
             <div className="h-72 min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.dailySpending}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tickFormatter={(value: string) => value.slice(5)} tick={{ fontSize: 9 }} interval="preserveStartEnd" />
-                  <YAxis tickFormatter={formatCompactCurrency} tick={{ fontSize: 10 }} width={52} />
+                  <CartesianGrid stroke="#eae5dc" strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={(value: string) => value.slice(5)} axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#85847f" }} interval="preserveStartEnd" />
+                  <YAxis tickFormatter={formatCompactCurrency} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#85847f" }} width={52} />
                   <Tooltip content={<AnalyticsTooltip />} />
                   <Bar dataKey="amount" name="Spend" fill="#D97745">
                     {data.dailySpending.map((day) => <Cell key={day.date} fill={day.weekday === 0 || day.weekday === 6 ? "#6d79bd" : "#D97745"} />)}
@@ -503,6 +554,7 @@ export default function AnalyticsPage() {
   const { showToast } = useToast();
   const [filters, setFilters] = useState<AnalyticsFilters>(DEFAULT_ANALYTICS_FILTERS);
   const [tab, setTab] = useState<AnalyticsTab>("spending");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const accounts = useMemo(
     () => getAccounts(snapshot.accounts, snapshot.transactions, snapshot.statements),
     [snapshot.accounts, snapshot.transactions, snapshot.statements],
@@ -538,7 +590,7 @@ export default function AnalyticsPage() {
   };
 
   const activePanel = {
-    spending: <SpendingPanel data={data} />,
+    spending: <SpendingPanel data={data} selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />,
     income: <IncomePanel data={data} />,
     comparison: <ComparisonPanel data={data} />,
     trends: <TrendsPanel data={data} />,

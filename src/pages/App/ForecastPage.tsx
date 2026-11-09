@@ -20,7 +20,7 @@ import { useFinanceStore } from "@/hooks/useFinanceStore";
 import { simulateForecastScenario } from "@/services/forecast/forecastScenarioService";
 import { periodScale } from "@/services/forecast/forecastingCalculations";
 import { DEFAULT_FORECAST_FILTERS, type ForecastFilters, type ForecastMethod } from "@/types/forecast";
-import { formatCompactCurrency, formatINR } from "@/utils/financeCalculations";
+import { calculateHealthScoreBreakdown, formatCompactCurrency, formatINR } from "@/utils/financeCalculations";
 
 const METHODS: Record<ForecastMethod, { label: string; description: string }> = {
   wma: { label: "Weighted average", description: "Recent complete months receive more weight." },
@@ -168,43 +168,74 @@ function ScenarioCard({
   expenseBaseline: number;
   incomeBaseline: number;
 }) {
-  const [changePercent, setChangePercent] = useState(0);
+  const [foodReductionPercent, setFoodReductionPercent] = useState(20);
+  const [monthlySavings, setMonthlySavings] = useState(5000);
+  const foodBaseline = data.categories
+    .filter((category) => ["food & dining", "groceries"].includes(category.category.toLocaleLowerCase()))
+    .reduce((sum, category) => sum + (category.available ? category.forecast : category.historicalAverage), 0);
+  const foodSavingsEstimate = foodBaseline * foodReductionPercent / 100;
+  const affordableSavings = Math.min(25_000, Math.max(0, incomeBaseline - expenseBaseline + foodSavingsEstimate));
+  const plannedMonthlySavings = Math.min(monthlySavings, affordableSavings);
   const scenario = useMemo(() => simulateForecastScenario({
-    expenseChangePercent: changePercent,
+    expenseChangePercent: 0,
     monthlyIncome: incomeBaseline,
     monthlyExpenses: expenseBaseline,
     budget: data.budgetRisk.budget,
-  }), [changePercent, incomeBaseline, expenseBaseline, data.budgetRisk.budget]);
+    foodExpenses: foodBaseline,
+    foodReductionPercent,
+    plannedMonthlySavings,
+  }), [foodBaseline, foodReductionPercent, incomeBaseline, expenseBaseline, data.budgetRisk.budget, plannedMonthlySavings]);
+  const projectedBudgets = data.budgetRisk.categories.map((category) => ({
+    category: category.category,
+    limit: category.allocated,
+    spent: ["food & dining", "groceries"].includes(category.category.toLocaleLowerCase())
+      ? category.forecast * (1 - foodReductionPercent / 100)
+      : category.forecast,
+    color: "#d97745",
+  }));
+  const projectedHealth = calculateHealthScoreBreakdown(
+    incomeBaseline,
+    scenario.monthlyExpenses,
+    projectedBudgets,
+    data.history.slice(-3).map((month) => month.expenses),
+    plannedMonthlySavings,
+  ).score;
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Spending scenario</CardTitle>
-        <p className="text-xs text-ink-muted">What-if calculation using your monthly baseline. Not a forecast of actual behavior.</p>
+        <CardTitle>What-if savings simulator</CardTitle>
+        <p className="text-xs text-ink-muted">Adjust the sliders to model food spending cuts and a monthly savings goal.</p>
       </CardHeader>
       <CardContent className="space-y-4">
         <label className="block text-sm font-medium">
-          Adjust expenses: {changePercent > 0 ? "+" : ""}{changePercent}%
-          <input type="range" min="-50" max="50" step="5" value={changePercent} onChange={(event) => setChangePercent(Number(event.target.value))} className="mt-2 w-full accent-[var(--color-accent-primary)]" />
+          Reduce food & grocery spend: {foodReductionPercent}%
+          <input type="range" min="0" max="50" step="5" value={foodReductionPercent} onChange={(event) => setFoodReductionPercent(Number(event.target.value))} className="mt-2 w-full accent-[var(--color-accent-primary)]" />
+          <span className="mt-1 block text-xs font-normal text-ink-muted">Historical baseline: {formatINR(foodBaseline)} / month</span>
+        </label>
+        <label className="block text-sm font-medium">
+          Save each month: {formatINR(plannedMonthlySavings)}
+          <input type="range" min="0" max={Math.floor(affordableSavings / 1000) * 1000} step="1000" value={Math.min(plannedMonthlySavings, Math.floor(affordableSavings / 1000) * 1000)} onChange={(event) => setMonthlySavings(Number(event.target.value))} className="mt-2 w-full accent-[var(--color-accent-primary)]" />
+          <span className="mt-1 block text-xs font-normal text-ink-muted">Capped at estimated cash available after the food reduction.</span>
         </label>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg bg-surface-secondary/50 p-3">
-            <p className="text-xs text-ink-muted">Scenario monthly spending</p>
+            <p className="text-xs text-ink-muted">Estimated monthly spend</p>
             <p className="mt-1 font-semibold tabular-nums">{formatINR(scenario.monthlyExpenses)}</p>
           </div>
           <div className="rounded-lg bg-surface-secondary/50 p-3">
-            <p className="text-xs text-ink-muted">Scenario monthly net</p>
-            <p className={`mt-1 font-semibold tabular-nums ${scenario.monthlyNet < 0 ? "text-error" : "text-success"}`}>{formatINR(scenario.monthlyNet)}</p>
+            <p className="text-xs text-ink-muted">Projected health score</p>
+            <p className="mt-1 font-semibold tabular-nums">{projectedHealth}/100</p>
           </div>
           <div className="rounded-lg bg-surface-secondary/50 p-3">
-            <p className="text-xs text-ink-muted">Annualized net (simple ×12)</p>
-            <p className="mt-1 font-semibold tabular-nums">{formatINR(scenario.annualNet)}</p>
+            <p className="text-xs text-ink-muted">Potential saved in 1 year</p>
+            <p className="mt-1 font-semibold tabular-nums text-success">{formatINR(scenario.annualSavingsPotential)}</p>
           </div>
           <div className="rounded-lg bg-surface-secondary/50 p-3">
-            <p className="text-xs text-ink-muted">Budget utilization</p>
-            <p className="mt-1 font-semibold tabular-nums">{scenario.budgetUtilization === null ? "No budget" : `${scenario.budgetUtilization.toFixed(0)}%`}</p>
+            <p className="text-xs text-ink-muted">Monthly free cash after saving</p>
+            <p className={`mt-1 font-semibold tabular-nums ${scenario.monthlyAvailableAfterSavings < 0 ? "text-error" : "text-success"}`}>{formatINR(scenario.monthlyAvailableAfterSavings)}</p>
           </div>
         </div>
-        <p className="text-xs text-ink-muted">This simple scenario assumes income remains unchanged and excludes investment growth and unusual expenses.</p>
+        <p className="text-xs text-ink-muted">Illustrative scenario using historical monthly estimates; assumes income is unchanged and excludes investment growth, fees, and unusual expenses. Not a guarantee.</p>
       </CardContent>
     </Card>
   );

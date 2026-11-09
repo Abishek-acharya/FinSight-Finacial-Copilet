@@ -17,7 +17,7 @@ export interface ButtonLinkProps extends Omit<LinkProps, "to"> {
 }
 
 const variants: Record<NonNullable<ButtonProps["variant"]>, string> = {
-  primary: "bg-accent-primary text-ink shadow-sm hover:bg-[#e08a5f]",
+  primary: "relative overflow-hidden rounded-xl bg-gradient-to-b from-[#e88756] to-accent-primary text-white shadow-[0_4px_14px_rgba(217,119,69,0.39)] hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(217,119,69,0.23)]",
   secondary: "bg-surface-secondary text-ink hover:bg-[#ece6db]",
   outline: "border border-border bg-surface text-ink hover:bg-surface-secondary",
   ghost: "bg-transparent text-ink-muted hover:bg-surface-secondary hover:text-ink",
@@ -56,7 +56,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={isDisabled}
         aria-busy={loading || undefined}
         className={cn(
-          "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-[color,background-color,transform] duration-150 active:scale-[0.98]",
+          "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-all duration-200 active:scale-95",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2",
           "disabled:pointer-events-none disabled:opacity-50",
           variants[variant],
@@ -87,7 +87,7 @@ export function ButtonLink({ to, variant = "primary", size = "md", className, ch
     <Link
       to={to}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-[color,background-color,transform] duration-150",
+        "inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-all duration-200 active:scale-95",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2",
         variants[variant],
         sizes[size],

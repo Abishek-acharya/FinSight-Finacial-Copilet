@@ -1,6 +1,6 @@
 export function AIInsightsPanel({ insights }: { insights: Array<{ title: string; description: string; value: string }> }) {
   return (
-    <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm">
+    <div className="rounded-[28px] border border-border/70 bg-surface/85 p-6 shadow-[0_2px_10px_-4px_rgba(37,37,34,0.07)] backdrop-blur-md">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent-secondary">AI signals</p>
       <h2 className="mt-2 font-display text-2xl font-semibold text-ink">Insights</h2>
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { DocumentArrowDownIcon, MicrophoneIcon, PaperAirplaneIcon, SparklesIcon, SpeakerWaveIcon, StopIcon } from "@heroicons/react/24/outline";
+import ReactMarkdown from "react-markdown";
+import { ArrowDownTrayIcon, DocumentArrowDownIcon, GlobeAltIcon, MicrophoneIcon, PaperAirplaneIcon, SparklesIcon, SpeakerWaveIcon, StopIcon } from "@heroicons/react/24/outline";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useFinanceStore } from "@/hooks/useFinanceStore";
 import { getStoredSession } from "@/lib/auth/authService";
@@ -8,9 +9,13 @@ import { getStoredSession } from "@/lib/auth/authService";
 type ChartData = { type: "bar" | "line"; title: string; data: Array<Record<string, string | number>>; xKey: string; yKey: string };
 type Download = { format: string; filename: string; mime: string; content_base64: string; summary: string };
 type Citation = { source: string; text: string };
-type Message = { role: "user" | "assistant"; content: string; chart?: ChartData; citations?: Citation[]; download?: Download };
+type UiHint =
+  | { type: "metrics"; data: Array<{ label: string; value: string; color: string }> }
+  | { type: "table"; data: Array<{ date: string; merchant: string; amount: string }> }
+  | { type: "progress"; data: Array<{ label: string; spent: number; limit: number; utilization: number; status: "over" | "warning" | "ok" }> };
+type Message = { role: "user" | "assistant"; content: string; chart?: ChartData; citations?: Citation[]; download?: Download; ui?: UiHint; tools?: string[] };
 type SpeechResult = ArrayLike<{ transcript: string }>;
-type SpeechEvent = { results: ArrayLike<SpeechResult> };
+type SpeechEvent = { results: ArrayLike<SpeechResult>; resultIndex?: number };
 type SpeechRecognitionLike = {
   lang: string;
   interimResults: boolean;
@@ -26,6 +31,13 @@ const speechApi = typeof window === "undefined"
   : (window as Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor }).SpeechRecognition
     ?? (window as Window & { webkitSpeechRecognition?: SpeechRecognitionConstructor }).webkitSpeechRecognition;
 
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 function downloadFile(payload: Download) {
   const binary = atob(payload.content_base64);
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -37,16 +49,26 @@ function downloadFile(payload: Download) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function toolLabel(tool: string) {
+  if (tool === "get_spending_summary") return "Querying financial data";
+  if (tool === "generate_report") return "Generating your report";
+  if (tool === "search_transactions") return "Searching transactions";
+  return `Analyzing with ${tool.replace(/_/g, " ")}`;
+}
+
 export function AgentChat() {
   const [messages, setMessages] = useState<Message[]>([{
     role: "assistant",
-    content: "Hi! I'm FinSight AI.\n\nI can answer questions about your real financial data after you upload a bank statement.\n\nGo to Statements and upload a CSV, PDF, or Excel file first.",
+    content: `${getGreeting()}! I'm FinSight AI, your personal financial co-pilot.\n\nI can analyze your income, track budgets, forecast spending, or generate a PDF report. What would you like to know?`,
   }]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState<number | null>(null);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [language, setLanguage] = useState<"en-IN" | "hi-IN">("en-IN");
   const snapshot = useFinanceStore();
   const hasData = snapshot.transactions.length > 0;
   const location = useLocation();
@@ -59,15 +81,23 @@ export function AgentChat() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceModeRef = useRef(false);
+  const languageRef = useRef<"en-IN" | "hi-IN">("en-IN");
   const autoAnalyzeStartedRef = useRef(false);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, status]);
+  useEffect(() => {
+    voiceModeRef.current = voiceMode;
+    languageRef.current = language;
+  }, [voiceMode, language]);
   useEffect(() => () => { abortRef.current?.abort(); window.speechSynthesis?.cancel(); recognitionRef.current?.stop(); }, []);
 
   function toggleVoice() {
+    window.speechSynthesis?.cancel();
+    setSpeaking(null);
     if (recording) { recognitionRef.current?.stop(); setRecording(false); return; }
     if (!speechApi) { setStatus("Voice input is unavailable in this browser."); return; }
     const recognition = new speechApi();
-    recognition.lang = "en-IN";
+    recognition.lang = languageRef.current;
     recognition.interimResults = true;
     recognition.onresult = (event) => setInput(Array.from(event.results).map((result) => result[0].transcript).join(""));
     recognition.onerror = () => setRecording(false);
@@ -75,6 +105,110 @@ export function AgentChat() {
     recognitionRef.current = recognition;
     recognition.start();
     setRecording(true);
+  }
+
+  function startVoiceListening() {
+    window.speechSynthesis?.cancel();
+    setSpeaking(null);
+    if (!voiceModeRef.current) return;
+    if (!speechApi) {
+      setStatus("Voice mode requires Chrome or Edge.");
+      voiceModeRef.current = false;
+      setVoiceMode(false);
+      return;
+    }
+    recognitionRef.current?.stop();
+    const recognition = new speechApi();
+    recognition.lang = languageRef.current;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results).map((result) => result[0].transcript).join("");
+      setInput(transcript);
+      const latest = event.results[event.results.length - 1];
+      if (latest && "isFinal" in latest && latest.isFinal) {
+        setRecording(false);
+        setIsThinking(true);
+        window.setTimeout(() => {
+          setInput("");
+          void send(transcript);
+        }, 300);
+      }
+    };
+    recognition.onerror = () => {
+      setRecording(false);
+      if (voiceModeRef.current) setStatus("I couldn't hear that. Listening again…");
+    };
+    recognition.onend = () => setRecording(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRecording(true);
+    setIsThinking(false);
+  }
+
+  function speakVoiceResponse(text: string) {
+    if (!text.trim()) {
+      if (voiceModeRef.current) startVoiceListening();
+      return;
+    }
+    if (!window.speechSynthesis) {
+      if (voiceModeRef.current) startVoiceListening();
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const cleanText = text
+      .replace(/₹\s*([\d,]+(?:\.\d+)?)/g, languageRef.current === "hi-IN" ? "$1 rupaye" : "$1 rupees")
+      .replace(/[*#_`]/g, "")
+      .replace(/\n+/g, " ")
+      .replace(/\s*[-–—]\s*/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const sentences = cleanText.match(/[^.!?]+(?:[.!?]+|$)/g)?.map((sentence) => sentence.trim()).filter(Boolean)
+      ?? (cleanText ? [cleanText] : []);
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = languageRef.current === "hi-IN"
+      ? voices.find((voice) => /Google हिन्दी|Google Hindi|Kalpana|Neerja/i.test(voice.name))
+        ?? voices.find((voice) => voice.lang.toLowerCase() === "hi-in")
+        ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("hi"))
+      : voices.find((voice) => /Google UK English Female|Neerja|Heera/i.test(voice.name))
+        ?? voices.find((voice) => voice.lang.toLowerCase() === "en-in")
+        ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("en-in"))
+      ?? voices.find((voice) => voice.lang === languageRef.current)
+      ?? voices.find((voice) => voice.lang.startsWith(languageRef.current.slice(0, 2)))
+      ?? voices[0];
+    sentences.forEach((sentence, index) => {
+      const utterance = new SpeechSynthesisUtterance(sentence);
+      if (preferred) utterance.voice = preferred;
+      utterance.lang = languageRef.current;
+      utterance.rate = languageRef.current === "hi-IN" ? 0.86 : 0.92;
+      utterance.pitch = 1.02;
+      utterance.onstart = () => { setSpeaking(messages.length); setIsThinking(false); };
+      utterance.onend = () => {
+        if (index === sentences.length - 1) {
+          setSpeaking(null);
+          if (voiceModeRef.current) window.setTimeout(startVoiceListening, 500);
+        }
+      };
+      window.speechSynthesis.speak(utterance);
+    });
+  }
+
+  function toggleVoiceMode() {
+    if (voiceMode) {
+      voiceModeRef.current = false;
+      setVoiceMode(false);
+      setRecording(false);
+      setIsThinking(false);
+      recognitionRef.current?.stop();
+      window.speechSynthesis?.cancel();
+      setSpeaking(null);
+      return;
+    }
+    voiceModeRef.current = true;
+    setVoiceMode(true);
+    const greeting = languageRef.current === "hi-IN"
+      ? "Namaste! Main aapka FinSight assistant hoon. Main aapki kya madad kar sakta hoon?"
+      : "Hello! I'm your FinSight assistant. I'd be happy to help you with your finances today. What would you like to know?";
+    speakVoiceResponse(greeting);
   }
 
   async function send(forcedText?: string) {
@@ -88,7 +222,10 @@ export function AgentChat() {
     let chart: ChartData | undefined;
     let citations: Citation[] | undefined;
     let download: Download | undefined;
-    const update = () => setMessages((items) => { const next = [...items]; next[next.length - 1] = { role: "assistant", content: answer, chart, citations, download }; return next; });
+    let ui: UiHint | undefined;
+    const tools: string[] = [];
+    const update = () => setMessages((items) => { const next = [...items]; next[next.length - 1] = { role: "assistant", content: answer, chart, citations, download, ui, tools }; return next; });
+    const history = messages.filter((message) => message.content.trim()).slice(-6).map(({ role, content }) => ({ role, content }));
     try {
       const session = getStoredSession();
       if (!session) throw new Error("Your session expired. Sign in again to use the assistant.");
@@ -98,7 +235,12 @@ export function AgentChat() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.accessToken}`,
         },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+          voice_mode: voiceModeRef.current,
+          history,
+          language: languageRef.current,
+        }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -122,7 +264,13 @@ export function AgentChat() {
           if (!data) continue;
           const payload = JSON.parse(data);
           if (event === "token") { answer += payload.content ?? ""; update(); }
-          if (event === "tool") setStatus(`Using ${String(payload.name).replace(/_/g, " ")}…`);
+          if (event === "tool") {
+            const name = String(payload.name);
+            if (!tools.includes(name)) tools.push(name);
+            setStatus(`${toolLabel(name)}…`);
+            update();
+          }
+          if (event === "ui") { ui = payload as UiHint; update(); }
           if (event === "chart") { chart = payload; update(); }
           if (event === "citations") { citations = payload; update(); }
           if (event === "download") { download = payload; update(); }
@@ -136,7 +284,11 @@ export function AgentChat() {
           : `I couldn’t reach the assistant backend. ${String(error)}\n\nStart the FastAPI server on port 8000 and configure backend/.env.`;
         update();
       }
-    } finally { setBusy(false); setStatus(""); abortRef.current = null; }
+    } finally {
+      setBusy(false); setStatus(""); abortRef.current = null;
+      if (voiceModeRef.current && answer.trim()) speakVoiceResponse(answer);
+      else setIsThinking(false);
+    }
   }
 
   useEffect(() => {
@@ -162,21 +314,44 @@ export function AgentChat() {
     utterance.onstart = () => setSpeaking(index); utterance.onend = () => setSpeaking(null); window.speechSynthesis.speak(utterance);
   }
 
+  function exportChat() {
+    const text = messages.map((message) => `${message.role.toUpperCase()}:\n${message.content}`).join("\n\n---\n\n");
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "FinSight_Chat_History.txt";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function explainChart(chart: ChartData) {
+    void send(`Explain the "${chart.title}" chart above in detail, including the largest value, the main trend, and one practical takeaway.`);
+  }
+
   return <section className="mx-auto flex h-[min(78vh,850px)] min-h-[540px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
-    <header className="flex items-center gap-3 border-b border-border px-5 py-4"><span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-primary text-white"><SparklesIcon className="h-5 w-5" /></span><div><h1 className="text-base font-semibold">FinSight AI Co-Pilot</h1><p className="text-xs text-ink-muted">Your financial data is sent to Groq with each question</p></div></header>
+    <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-primary text-white"><SparklesIcon className="h-5 w-5" /></span><div><h1 className="text-base font-semibold">FinSight Command Center</h1><p className="text-xs text-ink-muted">Deterministic commands run locally from your verified financial data</p></div></div><div className="flex items-center gap-2"><button type="button" onClick={exportChat} aria-label="Export chat history" title="Export chat history" className="rounded-full border border-border p-2 text-ink-muted transition-colors hover:bg-surface-secondary hover:text-ink"><ArrowDownTrayIcon className="size-4" /></button><button type="button" onClick={toggleVoiceMode} className={`rounded-full px-3 py-2 text-xs font-semibold transition-colors ${voiceMode ? "bg-error/10 text-error" : "border border-border bg-surface text-ink hover:bg-surface-secondary"}`}>{voiceMode ? "End voice session" : "Talk to Agent"}</button></div></header>
     {!hasData
       ? <div className="border-b border-warning/30 bg-warning/5 px-4 py-2.5 text-xs text-ink-muted"><strong className="text-ink">No data uploaded yet.</strong>{" "}The AI will answer general knowledge questions until you upload a statement. <a href="/app/statements" className="font-medium text-accent-secondary underline">Upload now →</a></div>
       : <div className="border-b border-success/30 bg-success/5 px-4 py-2 text-xs text-success">Connected to your financial data</div>}
     <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
       {messages.map((message, index) => <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><article className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm sm:max-w-[84%] ${message.role === "user" ? "rounded-br-sm bg-accent-primary text-white" : "rounded-tl-sm bg-surface-secondary text-ink"}`}>
-        <p className="whitespace-pre-wrap">{message.content || "…"}</p>
-        {message.chart && message.chart.data.length > 0 && <div className="mt-4 h-56 w-full min-w-[280px] rounded-xl bg-white p-3"><p className="mb-2 text-xs font-semibold text-ink-muted">{message.chart.title}</p><ResponsiveContainer width="100%" height="88%">{message.chart.type === "line" ? <LineChart data={message.chart.data}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey={message.chart.xKey} fontSize={10} /><YAxis fontSize={10} /><Tooltip /><Line dataKey={message.chart.yKey} stroke="#d97745" strokeWidth={2} /></LineChart> : <BarChart data={message.chart.data}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey={message.chart.xKey} fontSize={10} /><YAxis fontSize={10} /><Tooltip /><Bar dataKey={message.chart.yKey} fill="#d97745" radius={[4, 4, 0, 0]} /></BarChart>}</ResponsiveContainer></div>}
+        {message.tools && message.tools.length > 0 && <div className="mb-2 flex flex-wrap gap-2">{message.tools.map((tool) => <span key={tool} className="inline-flex items-center gap-1.5 rounded-full bg-accent-primary/10 px-2.5 py-1 text-xs font-medium text-accent-secondary"><span className="size-1.5 animate-pulse rounded-full bg-accent-primary" />{toolLabel(tool)}</span>)}</div>}
+        <div className={`max-w-none ${message.role === "assistant" ? "prose prose-sm prose-p:leading-relaxed prose-li:my-1 prose-strong:font-bold prose-strong:text-ink" : "whitespace-pre-wrap"}`}>
+          {message.role === "assistant" ? <ReactMarkdown>{message.content || "…"}</ReactMarkdown> : message.content || "…"}
+          {busy && message.role === "assistant" && index === messages.length - 1 && <span aria-hidden="true" className="ml-1 inline-block h-4 w-1.5 animate-chat-caret bg-accent-primary align-middle" />}
+        </div>
+        {message.ui?.type === "metrics" && <div className="mt-3 grid grid-cols-3 gap-2 transition-opacity duration-300">{message.ui.data.map((item, itemIndex) => <div key={`${item.label}-${itemIndex}`} className="rounded-xl border border-border bg-surface p-3 shadow-sm"><p className="text-[10px] uppercase tracking-wider text-ink-muted">{item.label}</p><p className={`mt-1 text-sm font-bold tabular-nums ${item.color}`}>{item.value}</p></div>)}</div>}
+        {message.ui?.type === "table" && <div className="mt-3 overflow-hidden rounded-lg border border-border bg-surface"><table className="w-full text-xs"><thead className="bg-surface-secondary text-ink-muted"><tr><th className="px-3 py-2 text-left font-medium">Date</th><th className="px-3 py-2 text-left font-medium">Merchant</th><th className="px-3 py-2 text-right font-medium">Amount</th></tr></thead><tbody className="divide-y divide-border">{message.ui.data.map((row, rowIndex) => <tr key={`${row.date}-${row.merchant}-${rowIndex}`} className="transition-colors hover:bg-surface-secondary/50"><td className="px-3 py-2 text-ink-muted">{row.date}</td><td className="px-3 py-2 font-medium text-ink">{row.merchant}</td><td className="px-3 py-2 text-right tabular-nums text-ink">{row.amount}</td></tr>)}</tbody></table></div>}
+        {message.ui?.type === "progress" && <div className="mt-3 space-y-3 rounded-xl border border-border bg-surface p-4 shadow-sm">{message.ui.data.map((item, itemIndex) => <div key={`${item.label}-${itemIndex}`}><div className="mb-1 flex justify-between gap-3 text-xs"><span className="font-medium text-ink">{item.label}</span><span className="shrink-0 text-ink-muted">₹{item.spent.toLocaleString("en-IN")} / ₹{item.limit.toLocaleString("en-IN")}</span></div><div className="h-2 w-full overflow-hidden rounded-full bg-surface-secondary"><div className={`h-full rounded-full transition-[width] duration-500 ${item.status === "over" ? "bg-error" : item.status === "warning" ? "bg-warning" : "bg-success"}`} style={{ width: `${Math.min(Math.max(item.utilization, 0), 100)}%` }} /></div></div>)}</div>}
+        {message.chart && message.chart.data.length > 0 && <div className="mt-4 rounded-xl bg-white p-3"><p className="mb-2 text-xs font-semibold text-ink-muted">{message.chart.title}</p><div className="h-48 min-w-[280px]"><ResponsiveContainer width="100%" height="100%">{message.chart.type === "line" ? <LineChart data={message.chart.data}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey={message.chart.xKey} fontSize={10} /><YAxis fontSize={10} /><Tooltip /><Line dataKey={message.chart.yKey} stroke="#d97745" strokeWidth={2} /></LineChart> : <BarChart data={message.chart.data}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey={message.chart.xKey} fontSize={10} /><YAxis fontSize={10} /><Tooltip /><Bar dataKey={message.chart.yKey} fill="#d97745" radius={[4, 4, 0, 0]} /></BarChart>}</ResponsiveContainer></div><button type="button" onClick={() => explainChart(message.chart!)} disabled={busy} className="mt-2 text-xs font-semibold text-accent-secondary hover:underline disabled:opacity-50">Explain this chart</button></div>}
         {message.citations?.map((citation, i) => <div key={i} className="mt-3 border-t border-border pt-2 text-xs text-ink-muted"><p className="font-semibold">Source: {citation.source}</p><p className="mt-1">{citation.text}</p></div>)}
-        {message.download && <button onClick={() => downloadFile(message.download!)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-medium text-accent-secondary shadow-sm"><DocumentArrowDownIcon className="h-4 w-4" /> Download {message.download.format.toUpperCase()} · {message.download.summary}</button>}
+        {message.download && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent-primary/20 bg-accent-primary/5 p-3"><div className="min-w-0"><p className="flex items-center gap-2 text-sm font-semibold text-ink"><DocumentArrowDownIcon className="h-4 w-4 shrink-0 text-accent-primary" /> <span className="truncate">{message.download.filename}</span></p><p className="mt-0.5 text-xs text-ink-muted">{message.download.summary} · {message.download.format.toUpperCase()}</p></div><button onClick={() => downloadFile(message.download!)} className="rounded-lg bg-accent-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-accent-secondary">Download</button></div>}
         {message.role === "assistant" && message.content && <button onClick={() => readAloud(message.content, index)} className="mt-2 inline-flex items-center gap-1 text-xs text-ink-muted"><SpeakerWaveIcon className="h-3.5 w-3.5" />{speaking === index ? "Stop" : "Listen"}</button>}
       </article></div>)}
+      {!messages.some((message) => message.role === "user") && !busy && <div className="mt-6 flex flex-wrap gap-2"><p className="sr-only">Quick actions</p>{["How much did I spend this month?", "Am I over budget?", "Predict next month's spending", "Show any unusual transactions", "What is compound interest?", "Generate my PDF report"].map((prompt) => <button key={prompt} type="button" onClick={() => void send(prompt)} className="rounded-full border border-border bg-surface px-3 py-1.5 text-left text-xs font-medium text-ink-muted transition-all hover:border-accent-primary/30 hover:bg-accent-primary/10 hover:text-accent-secondary">{prompt}</button>)}</div>}
       {status && <p className="text-xs text-ink-muted" role="status">{status}</p>}<div ref={bottomRef} />
     </div>
+    {voiceMode && <div className="mx-3 mb-3 flex flex-col items-center justify-center rounded-2xl border border-border bg-surface-secondary/30 py-6 shadow-inner"><div className="relative flex size-20 items-center justify-center">{(recording || speaking !== null) && <div className={`absolute inset-0 rounded-full animate-ping ${recording ? "bg-accent-primary/20" : "bg-wealth-green/20"}`} />}<button type="button" onClick={toggleVoiceMode} className={`relative z-10 grid size-14 place-items-center rounded-full shadow-lg transition-all ${recording ? "scale-110 bg-accent-primary text-white" : speaking !== null ? "scale-110 bg-wealth-green text-white" : isThinking ? "bg-ink-muted text-white" : "bg-surface text-ink"}`}>{speaking !== null ? <SpeakerWaveIcon className="size-7" /> : <MicrophoneIcon className="size-7" />}</button></div><p className="mt-3 text-sm font-semibold text-ink">{recording ? "Listening…" : isThinking ? "Thinking…" : speaking !== null ? "Speaking…" : "Tap to speak"}</p><button type="button" onClick={() => { const nextLanguage = language === "en-IN" ? "hi-IN" : "en-IN"; languageRef.current = nextLanguage; setLanguage(nextLanguage); window.speechSynthesis?.cancel(); speakVoiceResponse(nextLanguage === "hi-IN" ? "Ab main aapse Hindi mein baat karunga. Bataiye, kya jaanna hai?" : "I have switched back to English. How can I help you?"); }} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-accent-primary hover:bg-surface"><GlobeAltIcon className="size-3.5" />Switch to {language === "en-IN" ? "Hindi" : "English"}</button></div>}
     <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="flex items-center gap-2 border-t border-border bg-surface p-3 sm:p-4">
       <button type="button" onClick={toggleVoice} aria-label={recording ? "Stop recording" : "Voice input"} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border ${recording ? "animate-pulse bg-error text-white" : "text-ink-muted hover:bg-surface-secondary"}`}><MicrophoneIcon className="h-5 w-5" /></button>
       <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={recording ? "Listening…" : "Ask about spending, budgets, or goals…"} disabled={busy} className="min-w-0 flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent-primary" />
