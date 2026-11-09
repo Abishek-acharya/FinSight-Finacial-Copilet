@@ -840,9 +840,11 @@ PROACTIVE SUGGESTIONS:
 
 BILINGUAL LANGUAGE RULES:
 - The selected language metadata is authoritative, even if the current question is written in another language.
-- In English mode, reply entirely in clear, professional English.
-- In Hindi mode, reply in natural conversational Hinglish: use Hindi sentence structure with familiar English financial terms such as Budget, Expense, Income, Savings, and Report.
-- Do not translate into textbook Hindi or switch back to English mid-answer. Keep the same language style throughout.
+- In English mode (en-IN), reply entirely in clear, professional English.
+- In Hindi mode (hi-IN), reply in natural conversational Hinglish: use Hindi sentence structure with familiar English financial terms such as Budget, Expense, Income, Savings, and Report.
+- In Bengali (bn-IN), Gujarati (gu-IN), Kannada (kn-IN), Marathi (mr-IN), Punjabi (pa-IN), Tamil (ta-IN), Telugu (te-IN), Malayalam (ml-IN), Odia (or-IN), or Urdu (ur-IN) mode, reply entirely in that language using its natural sentence structure. Keep widely understood English financial terms (Budget, Expense, Income, EMI, SIP) where they appear naturally.
+- Do not translate into textbook or overly formal register. Keep the same language style throughout the entire reply.
+- Do not switch back to English mid-answer in any Indian language mode.
 
 VOICE MODE RULES:
 1. Write only complete, natural sentences.
@@ -1653,6 +1655,78 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(..., min_l
     except Exception:
         logger.exception("Live update connection failed")
         manager.disconnect(user_id, websocket)
+
+
+# ---------------------------------------------------------------------------
+# Edge-TTS voice synthesis endpoint
+# ---------------------------------------------------------------------------
+
+# BCP-47 language code → Microsoft Edge-TTS neural voice name
+_EDGE_TTS_VOICES: dict[str, str] = {
+    "en-IN": "en-IN-NeerjaNeural",
+    "hi-IN": "hi-IN-SwaraNeural",
+    "bn-IN": "bn-IN-TanishaaNeural",
+    "gu-IN": "gu-IN-DhwaniNeural",
+    "kn-IN": "kn-IN-SapnaNeural",
+    "mr-IN": "mr-IN-AarohiNeural",
+    "pa-IN": "pa-IN-OjasNeural",
+    "ta-IN": "ta-IN-PallaviNeural",
+    "te-IN": "te-IN-ShrutiNeural",
+    "ml-IN": "ml-IN-SobhanaNeural",
+    "or-IN": "or-IN-SubhasiniNeural",
+    "ur-IN": "ur-IN-GulNeural",
+}
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=3000)
+    language: str = Field(
+        default="en-IN",
+        pattern=r"^(en-IN|hi-IN|bn-IN|gu-IN|kn-IN|mr-IN|pa-IN|ta-IN|te-IN|ml-IN|or-IN|ur-IN)$",
+    )
+
+
+@app.post("/api/voice/speak")
+async def voice_speak(req: TTSRequest, user: dict[str, str] = Depends(current_user)):
+    """Convert text to speech using Microsoft Edge-TTS neural voices.
+
+    Returns a streaming MP3 audio response so the browser can play it
+    immediately via an <audio> element or the Web Audio API.
+    """
+    try:
+        import edge_tts  # noqa: PLC0415 — optional dependency
+    except ModuleNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="edge-tts is not installed on the server. Run: pip install edge-tts",
+        ) from None
+
+    voice = _EDGE_TTS_VOICES.get(req.language, _EDGE_TTS_VOICES["en-IN"])
+    # Strip markdown/symbols that sound bad when spoken aloud
+    clean = (
+        req.text
+        .replace("*", "").replace("#", "").replace("`", "").replace("_", "")
+        .replace("\n", " ").replace("₹", "")
+        .strip()
+    )
+    if not clean:
+        raise HTTPException(status_code=422, detail="Text is empty after cleaning.")
+
+    communicate = edge_tts.Communicate(clean, voice)
+
+    async def audio_stream():
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                yield chunk["data"]
+
+    return StreamingResponse(
+        audio_stream(),
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "no-store",
+            "X-TTS-Voice": voice,
+        },
+    )
 
 
 @app.post("/api/chat/stream")
